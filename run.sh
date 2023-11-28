@@ -18,4 +18,4 @@ export SINGULARITY_LOCALCACHEDIR=$SCRATCHDIR
 export SINGULARITY_TMPDIR=$SCRATCHDIR
 
 singularity exec --bind /storage/ \
-$SING_IMAGE/my_image.sif python3 $HOMEDIR/bio-research/train_script.py
+$SING_IMAGE python3 $HOMEDIR/bio-research/train_script.py
