@@ -8,6 +8,7 @@ import torch.nn.functional as F
 import numpy as np
 import argparse
 import re
+from datetime import datetime
 
 from torch.utils.data import Dataset
 from torch.nn import CrossEntropyLoss
@@ -290,8 +291,12 @@ def main(args):
     train_dataset = ProteinDataset(tokenizer=tokenizer, max_length=args.max_length, inputs=train_X, targets=train_y)
     test_dataset = ProteinDataset(tokenizer=tokenizer, max_length=args.max_length, inputs=test_X, targets=test_y)
 
-    train_model(train_ds=train_dataset, test_ds=test_dataset, model=pbert, tokenizer=tokenizer, seed=args.seed)
+    return train_model(train_ds=train_dataset, test_ds=test_dataset, model=pbert, tokenizer=tokenizer, seed=args.seed)
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    main(args)
+    tokenizer, model, history = main(args)
+    now = datetime.now()
+
+    name = now.strftime("model_%Y-%M-%d_%H:%M:%S")
+    torch.save(model, f'./output/{name}')
