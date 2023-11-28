@@ -1,0 +1,7 @@
+biopython
+pytorch
+datasets
+transformers
+numpy
+evaluate
+pandas

@@ -5,66 +5,25 @@ import torch.nn as nn
 import evaluate
 import random
 import torch.nn.functional as F
+import numpy as np
+import argparse
+import re
+
 from torch.utils.data import Dataset
 from torch.nn import CrossEntropyLoss
 from Bio import SeqIO
-from transformers import TrainingArguments, Trainer
 from sklearn.model_selection import train_test_split
-from transformers import BertModel, BertTokenizer, set_seed
-import numpy as np
+from transformers import TrainingArguments, Trainer, BertModel, BertTokenizer, set_seed
 
-# Deepspeed config for optimizer CPU offload
+parser = argparse.ArgumentParser()
 
-ds_config = {
-    "fp16": {
-        "enabled": "auto",
-        "loss_scale": 0,
-        "loss_scale_window": 1000,
-        "initial_scale_power": 16,
-        "hysteresis": 2,
-        "min_loss_scale": 1
-    },
+parser.add_argument('--seed', type=int, help='Random seed', default=42)
+parser.add_argument('--batch_size', type=int, help='Batch size', default=100)
+parser.add_argument('--epochs', type=int, help='Number of training epochs', default=50)
+parser.add_argument('--max_length', type=int, help='Maximum sequence length (shorter sequences will be pruned)', default=2048)
+parser.add_argument('--fasta', type=str, help='Path to the FASTA protein database', default='./epsd_sequences/Total.fasta')
+parser.add_argument('--phospho', type=str, help='Path to the phoshporylarion dataset', default='./epsd_sequences/Total.txt')
 
-    "optimizer": {
-        "type": "AdamW",
-        "params": {
-            "lr": "auto",
-            "betas": "auto",
-            "eps": "auto",
-            "weight_decay": "auto"
-        }
-    },
-
-    "scheduler": {
-        "type": "WarmupLR",
-        "params": {
-            "warmup_min_lr": "auto",
-            "warmup_max_lr": "auto",
-            "warmup_num_steps": "auto"
-        }
-    },
-
-    "zero_optimization": {
-        "stage": 2,
-        "offload_optimizer": {
-            "device": "cpu",
-            "pin_memory": True
-        },
-        "allgather_partitions": True,
-        "allgather_bucket_size": 2e8,
-        "overlap_comm": True,
-        "reduce_scatter": True,
-        "reduce_bucket_size": 2e8,
-        "contiguous_gradients": True
-    },
-
-    "gradient_accumulation_steps": "auto",
-    "gradient_clipping": "auto",
-    "steps_per_print": 2000,
-    "train_batch_size": "auto",
-    "train_micro_batch_size_per_gpu": "auto",
-    "wall_clock_breakdown": False
-}
 
 def load_fasta(path : str):
     seq_iterator = SeqIO.parse(open(path), 'fasta')
@@ -102,8 +61,6 @@ def get_inputs_outputs(fasta_path, phospho_path):
         targets.append(phospho[key])
 
     return inputs, targets
-
-import re
 
 class ProteinDataset(Dataset):
     def __init__(self,tokenizer, max_length,  
@@ -173,7 +130,7 @@ class ProteinDataset(Dataset):
         corresponding FASTA protein sequence. Value of one represents a phosphorylation 
         site being present at the i-th AA in the protein sequence.
         """
-        res = torch.zeros(self.max_len)
+        res = torch.zeros(self.max_len).long()
         res[target] = 1
         res = res.roll(1)
         for i, idx in enumerate(enc.input_ids.flatten().int()):
@@ -199,12 +156,14 @@ class ProteinDataset(Dataset):
         )
 
         target = self.prep_target(encoding, target)
-        encoding['labels'] = torch.tensor(target, dtype=torch.long)
-        return encoding
+        return {
+            'input_ids' : encoding['input_ids'].flatten(),
+            'attention_mask' : encoding['attention_mask'].flatten(),
+            'labels' : target
+        }
 
     def __len__(self):
         return len(self.x)
-    
 
 class ProteinEmbed(nn.Module):
     def __init__(self, base_model : nn.Module, dropout = 0.2, n_labels = 2, transfer_learning=True) -> None:
@@ -247,13 +206,13 @@ class ProteinEmbed(nn.Module):
             head_mask=head_mask,
             inputs_embeds=inputs_embeds,
             output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
+            output_hidden_states=True,
         )
 
         sequence_output = out.hidden_states[-1]
         sequence_output = self.dropout(sequence_output)
         logits = self.classifier(sequence_output)
-        outputs = self.activation(logits, 1)
+        outputs = self.activation(logits, -1)
 
         if labels is not None:
             loss_fct = CrossEntropyLoss()
@@ -285,8 +244,7 @@ def set_seeds(s):
     set_seed(s)
 
 def compute_metrics(eval_pred, metric):
-    logits, labels = eval_pred
-    preds = F.log_softmax(logits, dim=1)
+    preds, labels = eval_pred
     return metric.compute(predictions = preds, references=labels)
 
 def train_model(train_ds, test_ds, model, tokenizer,
@@ -306,8 +264,7 @@ def train_model(train_ds, test_ds, model, tokenizer,
         per_device_eval_batch_size=val_batch,
         gradient_accumulation_steps=accum,
         num_train_epochs=epochs,
-        seed = seed,
-        deepspeed= ds_config if deepspeed else None,
+        seed = seed
     )
     
     # Trainer
@@ -325,15 +282,16 @@ def train_model(train_ds, test_ds, model, tokenizer,
 
     return tokenizer, model, trainer.state.log_history
 
-def main(**kwargs):
-    inputs, outputs = get_inputs_outputs('epsd_sequences/Total.fasta', 'epsd_sequences/Total.txt')
+def main(args):
+    inputs, outputs = get_inputs_outputs(args.fasta, args.phospho)
     pbert, tokenizer = get_bert_model()
-    train_X, test_X, train_y, test_y = train_test_split(inputs, outputs, random_state=kwargs['seed'])
+    train_X, test_X, train_y, test_y = train_test_split(inputs, outputs, random_state=args.seed)
 
-    train_dataset = ProteinDataset(tokenizer=tokenizer, max_length=kwargs['max_length'], inputs=train_X, targets=train_y)
-    test_dataset = ProteinDataset(tokenizer=tokenizer, max_length=kwargs['max_length'], inputs=test_X, targets=test_y)
+    train_dataset = ProteinDataset(tokenizer=tokenizer, max_length=args.max_length, inputs=train_X, targets=train_y)
+    test_dataset = ProteinDataset(tokenizer=tokenizer, max_length=args.max_length, inputs=test_X, targets=test_y)
 
-    train_model(train_ds=train_dataset, test_ds=test_dataset, model=pbert, tokenizer=tokenizer, seed=kwargs['seed'])
+    train_model(train_ds=train_dataset, test_ds=test_dataset, model=pbert, tokenizer=tokenizer, seed=args.seed)
 
 if __name__ == '__main__':
-    main()
+    args = parser.parse_args()
+    main(args)
