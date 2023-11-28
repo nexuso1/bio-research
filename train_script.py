@@ -26,6 +26,10 @@ parser.add_argument('--fasta', type=str, help='Path to the FASTA protein databas
 parser.add_argument('--phospho', type=str, help='Path to the phoshporylarion dataset', default='./epsd_sequences/Total.txt')
 
 
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+print(device)
+
+
 def load_fasta(path : str):
     seq_iterator = SeqIO.parse(open(path), 'fasta')
     seq_dict = {}
@@ -287,12 +291,13 @@ def main(args):
     inputs, outputs = get_inputs_outputs(args.fasta, args.phospho)
     pbert, tokenizer = get_bert_model()
     train_X, test_X, train_y, test_y = train_test_split(inputs, outputs, random_state=args.seed)
-
+    model = ProteinEmbed(pbert)
+    model.to(device)
     train_dataset = ProteinDataset(tokenizer=tokenizer, max_length=args.max_length, inputs=train_X, targets=train_y)
     test_dataset = ProteinDataset(tokenizer=tokenizer, max_length=args.max_length, inputs=test_X, targets=test_y)
 
-    return train_model(train_ds=train_dataset, test_ds=test_dataset, model=pbert, tokenizer=tokenizer, seed=args.seed,
-                       batch_size=args.batch, epochs=args.epochs)
+    return train_model(train_ds=train_dataset, test_ds=test_dataset, model=model, tokenizer=tokenizer, seed=args.seed,
+                       batch=args.batch_size, epochs=args.epochs)
 
 if __name__ == '__main__':
     args = parser.parse_args()
