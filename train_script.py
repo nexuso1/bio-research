@@ -291,7 +291,8 @@ def main(args):
     train_dataset = ProteinDataset(tokenizer=tokenizer, max_length=args.max_length, inputs=train_X, targets=train_y)
     test_dataset = ProteinDataset(tokenizer=tokenizer, max_length=args.max_length, inputs=test_X, targets=test_y)
 
-    return train_model(train_ds=train_dataset, test_ds=test_dataset, model=pbert, tokenizer=tokenizer, seed=args.seed)
+    return train_model(train_ds=train_dataset, test_ds=test_dataset, model=pbert, tokenizer=tokenizer, seed=args.seed,
+                       batch_size=args.batch, epochs=args.epochs)
 
 if __name__ == '__main__':
     args = parser.parse_args()
