@@ -286,12 +286,14 @@ def train_model(train_ds, test_ds, model, tokenizer,
 def main(args):
     inputs, outputs = get_inputs_outputs(args.fasta, args.phospho)
     pbert, tokenizer = get_bert_model()
+    model = ProteinEmbed(pbert)
+    model.to(device)
     train_X, test_X, train_y, test_y = train_test_split(inputs, outputs, random_state=args.seed)
 
     train_dataset = ProteinDataset(tokenizer=tokenizer, max_length=args.max_length, inputs=train_X, targets=train_y)
     test_dataset = ProteinDataset(tokenizer=tokenizer, max_length=args.max_length, inputs=test_X, targets=test_y)
 
-    return train_model(train_ds=train_dataset, test_ds=test_dataset, model=pbert, tokenizer=tokenizer, seed=args.seed,
+    return train_model(train_ds=train_dataset, test_ds=test_dataset, model=model, tokenizer=tokenizer, seed=args.seed,
                        batch_size=args.batch, epochs=args.epochs)
 
 if __name__ == '__main__':
