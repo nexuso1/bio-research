@@ -40,7 +40,20 @@ def build_model(args, model : tf.keras.Model, data_length):
     
     return model
 
-def load_data(path):
+def decode_fn(record_bytes):
+  return tf.io.parse_single_example(
+      # Data
+      record_bytes,
+      # Schema
+      {"embeddings": tf.io.FixedLenFeature([], dtype=tf.float32),
+       "sites": tf.io.VarLenFeature(dtype=tf.int64) }
+  )
+
+
+def load_data(path, tfrec=True):
+    if tfrec:
+        trec_dataset = tf.data.TFRecordDataset([path]).map(decode_fn)
+        
     return np.load(path)
 
 def train_model(args, model : tf.keras.Model, X, y):
@@ -50,9 +63,9 @@ def train_model(args, model : tf.keras.Model, X, y):
     for train, test in kfold.split(X, np.argmax(y, axis=-1)):
         print(f'Starting training for fold {count}')
         model.fit(tf.gather(X, train), tf.gather(y, train), 
-                  batch_size=args.batch_size, use_multiprocessing=True, workers=-1, 
+                  batch_size=args.batch_size, epochs=args.epochs, use_multiprocessing=True, workers=-1, 
                   validation_data=(tf.gather(X, test), tf.gather(y, test)))
-        loss, acc, f1 = model.evaluate(X[test], y[test], batch_size=args.batch_size, workers=-1, use_multiprocessing=True)
+        loss, acc, f1 = model.evaluate(tf.gather(X, test), tf.gather(y, test), batch_size=args.batch_size, workers=-1, use_multiprocessing=True)
         accs.append(acc)
         f1s.append(f1)
 
