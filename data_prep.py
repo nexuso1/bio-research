@@ -15,12 +15,19 @@ def float_feature(value):
     """Returns a float_list from a list of float / double."""
     return tf.train.Feature(float_list=tf.train.FloatList(value=value))
 
+def bytes_feature(value):
+  """Returns a bytes_list from a string / byte."""
+  if isinstance(value, type(tf.constant(0))):
+    value = value.numpy() # BytesList won't unpack a string from an EagerTensor.
+  return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+
 def int32_feature(value):
     """Returns an int64_list from a bool / enum / int / uint."""
     return tf.train.Feature(int64_list=tf.train.Int64List(value=value))
 
-def create_example(embed, sites):
+def create_example(id, embed, sites):
     feature = {
+        "uniprot_id" : bytes_feature(id),
         "embeddings": float_feature(embed),
         "sites" : int32_feature(sites)
     }
@@ -67,19 +74,29 @@ def prep_data(args, phospho_data_pos):
             buffer = []
             break
     
-        fixed_path = re.sub('\uf07c', '|', prot)
-        fixed_path = re.sub('\uf03a', ':', fixed_path)
-        seq_id = re.findall(r'GN:.+\|.+\|.+\|(.+)\.npy', fixed_path)[0]
+        seq_id = prot.split('_')[-1][:-4] # Shave off .npy
         emebddings = np.load(prot)
         
         if not seq_id in phospho_data_pos:
+            continue
+
+        try:
+            emebddings = np.load(prot)
+        except:
+            print(f"Could not load {prot}, skipping")
+            continue
+
+        try:
+            targets[sites] = 1
+        except:
+            print(f"Bad mapping of sites to protein in {prot}, skipping")
             continue
         
         sites = [eval(i) - 1 for i in phospho_data_pos[seq_id]]
         targets = np.zeros(shape=(emebddings.shape[0]), dtype=np.int32)
         targets[sites] = 1
         targets = targets.reshape(-1, 1)
-        example = create_example(emebddings, sites)
+        example = create_example(seq_id, emebddings, sites)
         buffer.append(example)
 
 def main(args):
