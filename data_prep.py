@@ -66,7 +66,7 @@ def extract_pos_info(dataset : pd.DataFrame):
 
 def prep_data(args, phospho_data_pos):
     buffer = []
-    buff_max_size = 1
+    buff_max_size = 2000
     idx = 0
     for prot in glob.glob(f'{args.e}/*.npy'):
         if len(buffer) == buff_max_size:
