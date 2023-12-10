@@ -35,6 +35,7 @@ def create_example(id, embed, sites):
 
 def parse_tfrecord_fn(example):
     feature_description = {
+        "uniprot_id" : tf.io.FixedLenFeature([], tf.string),
         "embeddings" : tf.io.FixedLenFeature([], tf.float32),
         "sites" : tf.io.VarLenFeature(dtype=tf.int64)
     }
