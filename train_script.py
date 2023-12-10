@@ -290,6 +290,8 @@ def train_model(train_ds, test_ds, model, tokenizer,
 def main(args):
     inputs, outputs = get_inputs_outputs(args.fasta, args.phospho)
     pbert, tokenizer = get_bert_model()
+    model = ProteinEmbed(pbert)
+    model.to(device)
     train_X, test_X, train_y, test_y = train_test_split(inputs, outputs, random_state=args.seed)
     model = ProteinEmbed(pbert)
     model.to(device)
