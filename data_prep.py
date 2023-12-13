@@ -106,7 +106,7 @@ def prep_data(args, phospho_data_pos):
             print(f"Bad mapping of sites in {prot}. Sites = {sites}, prot.shape = {emebddings.shape}")
         targets = targets.reshape(-1, 1)
         if args.m == "per_residue":
-            examples = create_examples_residue(seq_id, emebddings, sites)
+            examples = create_examples_residue(seq_id, emebddings, targets)
             buffer.extend(examples)
         else:  
             example = create_example(seq_id, emebddings, sites)
