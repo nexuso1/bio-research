@@ -41,7 +41,7 @@ def create_examples_residue(id, embed, sites):
         feature = {
         "uniprot_id" : bytes_feature(id.encode('utf-8')),
         "embedding": float_feature(e),
-        "sites" : int32_feature(sites[i])
+        "sites" : int32_feature([sites[i]])
         }
         res.append(feature)
     
