@@ -36,11 +36,10 @@ def create_example(id, embed, sites):
     return tf.train.Example(features=tf.train.Features(feature=feature))
 
 def create_examples_residue(id, embed, sites):
-
     res = []
     for i, e in enumerate(embed):
         feature = {
-        "uniprot_id" : bytes_feature(id),
+        "uniprot_id" : bytes_feature(id.encode('utf-8')),
         "embedding": float_feature(e),
         "sites" : int32_feature(sites[i])
         }
