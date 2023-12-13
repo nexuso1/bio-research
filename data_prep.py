@@ -40,12 +40,12 @@ def create_examples_residue(id, embed, sites):
     for i, e in enumerate(embed):
         feature = {
         "uniprot_id" : bytes_feature(id.encode('utf-8')),
-        "embedding": float_feature(e),
-        "sites" : int32_feature([sites[i]])
+        "embeddings": float_feature(e),
+        "sites" : int32_feature([int(sites[i])])
         }
-        res.append(feature)
-    
+        res.append(tf.train.Example(features=tf.train.Features(feature=feature)))
     return res
+
 def parse_tfrecord_fn(example):
     feature_description = {
         "uniprot_id" : tf.io.FixedLenFeature([], tf.string),
@@ -57,6 +57,7 @@ def parse_tfrecord_fn(example):
 
 def serialize_data(args, data, idx):
     path = os.path.join(args.o, f'embeds_{idx}.tfrec')
+    print(f'Saved to {path}. No. records: {len(data)}')
     with tf.io.TFRecordWriter(path) as writer:
         for example in data:
             writer.write(example.SerializeToString())
@@ -80,10 +81,10 @@ def extract_pos_info(dataset : pd.DataFrame):
 
 def prep_data(args, phospho_data_pos):
     buffer = []
-    buff_max_size = 50000
+    buff_max_size = 100000
     idx = 0
     for prot in glob.glob(f'{args.e}/*.npy'):
-        if len(buffer) == buff_max_size:
+        if len(buffer) >= buff_max_size:
             serialize_data(args, buffer, idx)
             idx += 1
             buffer = []
@@ -106,7 +107,7 @@ def prep_data(args, phospho_data_pos):
             print(f"Bad mapping of sites in {prot}. Sites = {sites}, prot.shape = {emebddings.shape}")
         targets = targets.reshape(-1, 1)
         if args.m == "per_residue":
-            examples = create_examples_residue(seq_id, emebddings, sites)
+            examples = create_examples_residue(seq_id, emebddings, targets)
             buffer.extend(examples)
         else:  
             example = create_example(seq_id, emebddings, sites)
