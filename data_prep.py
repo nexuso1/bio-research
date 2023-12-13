@@ -4,12 +4,13 @@ import numpy as np
 import re
 import pandas as pd
 import argparse
+import os
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('-p', help='File containing the phosphosite dataset', default='.\phosphosite_sequences\Phosphorylation_site_dataset')
-parser.add_argument('-e', help='Directory containing embedding .npy files', default='.\sequences')
-parser.add_argument('-o', help='Output dir', default='.\sequences')
+parser.add_argument('-p', help='File containing the phosphosite dataset', default='./phosphosite_sequences/Phosphorylation_site_dataset')
+parser.add_argument('-e', help='Directory containing embedding .npy files', default='./sequences')
+parser.add_argument('-o', help='Output dir', default='./sequences')
 parser.add_argument('-m', help='Mode. Can be either "per_prot" or "per_residue". per_prot saves all embeddings for a protein as one record, per_residues saves individual residue embeddings as records.', default='per_residue')
 
 def float_feature(value):
@@ -28,7 +29,7 @@ def int32_feature(value):
 
 def create_example(id, embed, sites):
     feature = {
-        "uniprot_id" : bytes_feature(id),
+        "uniprot_id" : bytes_feature(id.encode('utf-8')),
         "embeddings": float_feature(embed),
         "sites" : int32_feature(sites)
     }
@@ -56,12 +57,12 @@ def parse_tfrecord_fn(example):
     return example
 
 def serialize_data(args, data, idx):
-    with tf.io.TFRecordWriter(
-        f'{args.e}/embeds_{idx}.tfrec', 
-    ) as writer:
+    path = os.path.join(args.o, f'embeds_{idx}.tfrec')
+    with tf.io.TFRecordWriter(path) as writer:
         for example in data:
             writer.write(example.SerializeToString())
-
+    
+    print(f'Data saved in {path}')
 def extract_pos_info(dataset : pd.DataFrame):
     """
     Extracts phosphoryllation site indices from the dataset. 
@@ -89,8 +90,6 @@ def prep_data(args, phospho_data_pos):
             buffer = []
     
         seq_id = prot.split('_')[-1][:-4] # Shave off .npy
-        emebddings = np.load(prot)
-        
         if not seq_id in phospho_data_pos:
             continue
 
@@ -100,15 +99,12 @@ def prep_data(args, phospho_data_pos):
             print(f"Could not load {prot}, skipping")
             continue
 
+        sites = [eval(i) - 1 for i in phospho_data_pos[seq_id]]
+        targets = np.zeros(shape=(emebddings.shape[0]), dtype=np.int32)
         try:
             targets[sites] = 1
         except:
-            print(f"Bad mapping of sites to protein in {prot}, skipping")
-            continue
-        
-        sites = [eval(i) - 1 for i in phospho_data_pos[seq_id]]
-        targets = np.zeros(shape=(emebddings.shape[0]), dtype=np.int32)
-        targets[sites] = 1
+            print(f"Bad mapping of sites in {prot}. Sites = {sites}, prot.shape = {emebddings.shape}")
         targets = targets.reshape(-1, 1)
         if args.per_residue:
             examples = create_examples_residue(seq_id, emebddings, sites)
@@ -116,6 +112,9 @@ def prep_data(args, phospho_data_pos):
         else:  
             example = create_example(seq_id, emebddings, sites)
             buffer.append(example)
+
+    if len(buffer) > 0:
+        serialize_data(args, buffer, idx)
 
 def main(args):
     phospho_data = pd.read_csv(args.p, sep='\t', skiprows=3)
