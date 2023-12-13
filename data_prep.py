@@ -10,6 +10,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-p', help='File containing the phosphosite dataset', default='.\phosphosite_sequences\Phosphorylation_site_dataset')
 parser.add_argument('-e', help='Directory containing embedding .npy files', default='.\sequences')
 parser.add_argument('-o', help='Output dir', default='.\sequences')
+parser.add_argument('-m', help='Mode. Can be either "per_prot" or "per_residue". per_prot saves all embeddings for a protein as one record, per_residues saves individual residue embeddings as records.', default='per_residue')
 
 def float_feature(value):
     """Returns a float_list from a list of float / double."""
@@ -33,6 +34,18 @@ def create_example(id, embed, sites):
     }
     return tf.train.Example(features=tf.train.Features(feature=feature))
 
+def create_examples_residue(id, embed, sites):
+
+    res = []
+    for i, e in enumerate(embed):
+        feature = {
+        "uniprot_id" : bytes_feature(id),
+        "embedding": float_feature(e),
+        "sites" : int32_feature(sites[i])
+        }
+        res.append(feature)
+    
+    return res
 def parse_tfrecord_fn(example):
     feature_description = {
         "uniprot_id" : tf.io.FixedLenFeature([], tf.string),
@@ -64,6 +77,7 @@ def extract_pos_info(dataset : pd.DataFrame):
     
     return res
 
+
 def prep_data(args, phospho_data_pos):
     buffer = []
     buff_max_size = 2000
@@ -73,7 +87,6 @@ def prep_data(args, phospho_data_pos):
             serialize_data(args, buffer, idx)
             idx += 1
             buffer = []
-            break
     
         seq_id = prot.split('_')[-1][:-4] # Shave off .npy
         emebddings = np.load(prot)
@@ -97,8 +110,12 @@ def prep_data(args, phospho_data_pos):
         targets = np.zeros(shape=(emebddings.shape[0]), dtype=np.int32)
         targets[sites] = 1
         targets = targets.reshape(-1, 1)
-        example = create_example(seq_id, emebddings, sites)
-        buffer.append(example)
+        if args.per_residue:
+            examples = create_examples_residue(seq_id, emebddings, sites)
+            buffer.extend(examples)
+        else:  
+            example = create_example(seq_id, emebddings, sites)
+            buffer.append(example)
 
 def main(args):
     phospho_data = pd.read_csv(args.p, sep='\t', skiprows=3)
