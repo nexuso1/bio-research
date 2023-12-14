@@ -14,42 +14,9 @@ parser.add_argument('--seed', type=int, help='Random seed', default=42)
 parser.add_argument('-i', type=str, help='Input path', default='./small_dataset.npy')
 parser.add_argument('-o', help='Output folder', type=str, default='./baseline')
 
-class DataGenerator(tf.keras.utils.Sequence):
-    def __init__(self, dataset, batch_size=16, dim=(1), shuffle=True):
-        'Initialization'
-        self.dim = dim
-        self.batch_size = batch_size
-        self.dataset = dataset
-        self.shuffle = shuffle
-        self.indexes = dataset.index
-        self.on_epoch_end()
-
-    def __len__(self):
-        'Denotes the number of batches per epoch'
-        return math.ceil(len(self.dataset) / self.batch_size)
-    
-    def __getitem__(self, index):
-        'Generate one batch of data'
-        # Generate indexes of the batch
-        idxs = [i for i in range(index*self.batch_size,(index+1)*self.batch_size)]
-        # Find list of IDs
-        list_IDs_temp = [self.indexes[k] for k in idxs]
-        # Generate data
-        User = self.dataset.loc[list_IDs_temp,['user_id']].to_numpy()#.reshape(-1)
-        Item = self.dataset.loc[list_IDs_temp,['item_id']].to_numpy()#.reshape(-1)
-        y = self.dataset.loc[list_IDs_temp,['rating']].to_numpy()#.reshape(-1)
-        #print("u,i,r:", [User, Item],[y])
-        return [User, Item],[y]
-    def on_epoch_end(self):
-        'Updates indexes after each epoch'
-        self.indexes = np.arange(len(self.dataset))
-        if self.shuffle == True:
-            np.random.shuffle(self.indexes)
-
-
-def create_model(args, data):
+def create_model(args, input_shape):
     model = tf.keras.Sequential([
-        tf.keras.layers.Input((data.shape[1]), batch_size=args.batch_size, name='input'),
+        tf.keras.layers.Input(input_shape, batch_size=args.batch_size, name='input'),
         tf.keras.layers.Dense(2048, activation='relu'),
         tf.keras.layers.Dropout(0.2),
         tf.keras.layers.Dense(1024, activation='relu'),
@@ -90,8 +57,13 @@ def load_data(path, tfrec=True):
         # In this case, path is a list of filenames
         tfrec_dataset = tf.data.TFRecordDataset(path).map(decode_fn)
         return tfrec_dataset
-        
+
     return np.load(path)
+
+def get_length(path):
+    with open(f'{path}/n_elements.txt', 'r') as f:
+        length = eval(f.read())
+    return length
 
 def train_model(args, model : tf.keras.Model, X, y):
     kfold = StratifiedKFold(random_state=args.seed, shuffle=True)
@@ -117,8 +89,7 @@ def save_model(args, model : tf.keras.Model):
     model.save(os.path.join(args.o, name), save_format='h5')
 
 def prep_data_tfrec(data : tf.data.Dataset):
-    data = data.shuffle(buffer_size=1000, seed=42).prefetch(tf.data.AUTOTUNE)
-    return data
+    return data.shuffle(buffer_size=1000, seed=42).prefetch(tf.data.AUTOTUNE)
 
 def prep_data_numpy(data : np.ndarray):
     target = data[:, -1]
@@ -131,18 +102,18 @@ def main(args):
 
     # Load data from .npy array
     data = load_data(args.i)
-
+    data_length = get_length(args.i)
     # Prepare targets and split the data into inputs/outputs
-    X, y = prep_data_tfrec(data)
+    prepared_ds = prep_data_tfrec(data)
 
     # Create the baseline model
-    model = create_model(args, X)
+    model = create_model(args, data.element_spec['embeddings'].shape)
     
     # Compile the model with an optimizer and a learning schedule
-    build_model(args, model, data_length=X.shape[0])
+    build_model(args, model, data_length=data_length)
 
     # Train the model using 5-fold CV
-    model = train_model(args, model, X, y)
+    model = train_model(args, model, prepared_ds)
 
     # Save the model as .h5
     save_model(args, model)
