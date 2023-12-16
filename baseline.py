@@ -13,8 +13,10 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--batch_size', type=int, help='Batch size for training', default=30)
 parser.add_argument('--epochs', type=int, help='Epochs to train', default=20)
 parser.add_argument('--seed', type=int, help='Random seed', default=42)
-parser.add_argument('-i', type=str, help='Input path', default='./tfrec_data_residues')
+parser.add_argument('-i', type=str, help='Input path', default='./tfrec_data_residue')
 parser.add_argument('-o', help='Output folder', type=str, default='./baseline')
+
+print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
 
 def create_model(args, input_shape):
     model = tf.keras.Sequential([
@@ -57,7 +59,7 @@ def decode_fn(record_bytes):
 def load_data(path, tfrec=True):
     if tfrec:
         # In this case, path is a list of filenames
-        tfrec_dataset = tf.data.TFRecordDataset(path).map(decode_fn)
+        tfrec_dataset = tf.data.TFRecordDataset(path).map(decode_fn, num_parallel_calls=tf.data.AUTOTUNE)
         return tfrec_dataset
 
     return np.load(path)
@@ -97,7 +99,7 @@ def example_prep_fn(example):
     return example['embeddings'], tf.one_hot(example['sites'][0], depth=2)
 
 def prep_data_tfrec(data : tf.data.Dataset):
-    return data.map(example_prep_fn).shuffle(buffer_size=1000, seed=42)
+    return data.map(example_prep_fn, num_parallel_calls=tf.data.AUTOTUNE).shuffle(buffer_size=1000, seed=42)
 
 def prep_data_numpy(data : np.ndarray):
     target = data[:, -1]
