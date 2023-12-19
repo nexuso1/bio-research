@@ -16,7 +16,7 @@ parser.add_argument('--epochs', type=int, help='Epochs to train', default=20)
 parser.add_argument('--seed', type=int, help='Random seed', default=42)
 parser.add_argument('-i', type=str, help='Input path', default='./tfrec_data_residues')
 parser.add_argument('-c', type=str, help='Cluster information file path (.tsv format)', default='cluster30.tsv')
-parser.add_argument('-o', help='Output folder', type=str, default='./baseline')
+parser.add_argument('-o', help='Output folder', type=str, default='./stratified')
 
 def create_model(args, input_shape):
     model = tf.keras.Sequential([
@@ -76,6 +76,8 @@ def split_train_test_clusters(args, clusters : pd.DataFrame, test_size : float):
     train = reps.head(train_last_idx)
     test = reps.tail(train_last_idx)
 
+    return train, test
+
 def train_model(args, model : tf.keras.Model, data : tf.data.Dataset, clusters : pd.DataFrame, data_length : int):
     test_size = 0.2
     train_clusters, test_clusters = split_train_test_clusters(args, clusters, test_size)
@@ -87,7 +89,7 @@ def train_model(args, model : tf.keras.Model, data : tf.data.Dataset, clusters :
     # Prepare train dataset
     train = data.filter(lambda x: x['uniprot_id'] in train_clusters).map(example_prep_fn)
     train = train.batch(args.batch_size).prefetch(tf.data.AUTOTUNE)
-    
+
     model.fit(train,  epochs=args.epochs, use_multiprocessing=True, workers=-1, 
                 validation_data=test)
     loss, acc, f1 = model.evaluate(test, workers=-1, use_multiprocessing=True)
@@ -96,7 +98,7 @@ def train_model(args, model : tf.keras.Model, data : tf.data.Dataset, clusters :
 def save_model(args, model : tf.keras.Model):
     now = datetime.now()
 
-    name = now.strftime("baseline_%Y-%M-%d_%H:%M:%S")
+    name = now.strftime("stratified_%Y-%M-%d_%H:%M:%S")
     model.save(os.path.join(args.o, name), save_format='h5')
 
 def example_prep_fn(example):
@@ -126,7 +128,7 @@ def main(args):
     build_model(args, model, data_length=data_length)
 
     # Train the model using 5-fold CV
-    model = train_model(args, model, prepared_ds, clusters, data_length)
+    model = train_model(args, model, data, clusters, data_length)
 
     # Save the model as .h5
     save_model(args, model)
