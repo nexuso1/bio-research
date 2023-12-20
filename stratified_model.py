@@ -15,7 +15,7 @@ parser.add_argument('--batch_size', type=int, help='Batch size for training', de
 parser.add_argument('--epochs', type=int, help='Epochs to train', default=20)
 parser.add_argument('--seed', type=int, help='Random seed', default=42)
 parser.add_argument('-i', type=str, help='Input path', default='./tfrec_data_residues')
-parser.add_argument('-c', type=str, help='Cluster information file path (.tsv format)', default='cluster30.tsv')
+parser.add_argument('-c', type=str, help='Cluster information file path (.tsv format)', default='./cluster30.tsv')
 parser.add_argument('-o', help='Output folder', type=str, default='./stratified')
 
 def create_model(args, input_shape):
