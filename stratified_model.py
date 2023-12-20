@@ -71,28 +71,45 @@ def get_length(path : str):
 
 def split_train_test_clusters(args, clusters : pd.DataFrame, test_size : float):
     reps = clusters['cluster_rep'].unique() # Unique cluster representatives
-    reps = reps.sample(frac=1, random_state=args.seed) # shuffle
-    train_last_idx = int(len(reps) * (1 - test_size))
-    train = reps.head(train_last_idx)
-    test = reps.tail(train_last_idx)
+    np.random.shuffle(reps) # in-place shuffle
+    train_last_idx = int(reps.shape[0] * (1 - test_size))
+    train = reps[:train_last_idx]
+    test = reps[train_last_idx:]
 
-    return train, test
+    return set(train), set(test)
+
+def get_train_test_prots(clusters, train_clusters, test_clusters):
+    train_mask = [x in train_clusters for x in clusters['cluster_rep']]
+    test_mask = [x in test_clusters for x in clusters['cluster_rep']]
+    train_prots = clusters['cluster_mem'].where(train_mask)
+    test_prots = clusters['cluster_mem'].where(test_mask)
+
+    return set(train_prots), set(test_prots)
 
 def train_model(args, model : tf.keras.Model, data : tf.data.Dataset, clusters : pd.DataFrame, data_length : int):
     test_size = 0.2
     train_clusters, test_clusters = split_train_test_clusters(args, clusters, test_size)
+    print('Clusters split')
+    train_prots, test_prots = get_train_test_prots(clusters, train_clusters, test_clusters)
+    print('Proteins split according to clusters')
+    print(f'N train proteins: {len(train_prots)}')
+    print(f'N test proteins: {len(test_prots)}')
 
     # Prepare test dataset
-    test = data.filter(lambda x: x['uniprot_id'] in test_clusters).map(example_prep_fn)
+    test = data.filter(lambda x: x['uniprot_id'].ref() in test_prots).map(example_prep_fn, num_parallel_calls=tf.data.AUTOTUNE)
     test = test.batch(args.batch_size).prefetch(tf.data.AUTOTUNE)
+    print('Test data prepared')
 
     # Prepare train dataset
-    train = data.filter(lambda x: x['uniprot_id'] in train_clusters).map(example_prep_fn)
+    train = data.filter(lambda x: x['uniprot_id'].ref() in train_prots).map(example_prep_fn, num_parallel_calls=tf.data.AUTOTUNE)
     train = train.batch(args.batch_size).prefetch(tf.data.AUTOTUNE)
+    print('Train data prepared')
 
+    print('Starting training')
     model.fit(train,  epochs=args.epochs, use_multiprocessing=True, workers=-1, 
                 validation_data=test)
     loss, acc, f1 = model.evaluate(test, workers=-1, use_multiprocessing=True)
+    print(f'Training finished with acc: {acc}, f1: {f1}')
 
     return model
 def save_model(args, model : tf.keras.Model):
@@ -105,18 +122,20 @@ def example_prep_fn(example):
     return example['embeddings'], tf.one_hot(example['sites'][0], depth=2)
 
 def prep_data_tfrec(data : tf.data.Dataset):
-    return data.map(example_prep_fn).shuffle(buffer_size=1000, seed=42)
+    return data.interleave(example_prep_fn, cycle_length=tf.data.AUTOTUNE).shuffle(buffer_size=1000, seed=42)
 
 def load_clusters(path):
-    pd.read_csv(path, sep='\t', names=['cluster_rep', 'cluster_mem'])
+    return pd.read_csv(path, sep='\t', names=['cluster_rep', 'cluster_mem'])
 
 def main(args):
     # Set random seed
     tf.random.set_seed(args.seed)
+    np.random.seed(args.seed)
 
     # Load data from .npy array
     paths = glob.glob(f'{args.i}/*.tfrec')
     data = load_data(paths)
+    print(args.c)
     clusters = load_clusters(args.c)
     data_length = get_length(args.i)
     # Prepare targets and split the data into inputs/outputs
