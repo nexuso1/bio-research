@@ -45,6 +45,22 @@ def load_fasta(path : str):
     return seq_dict
 
 def load_phospho(path : str):
+    """
+    Extracts phosphoryllation site indices from the dataset. 
+    Locations expected in the column 'MOD_RSD'.
+    
+    Returns a dictionary in format {ACC_ID : [list of phosphoryllation site indices]}
+    """
+    dataset = pd.read_csv(path)
+    dataset['position'] = dataset['MOD_RSD'].str.extract(r'[\w]([\d]+)-p')
+    grouped = dataset.groupby(dataset['ACC_ID'])
+    res = {}
+    for id, group in grouped:
+        res[id] = group['position'].to_list()
+    
+    return res
+
+def load_phospho_epsd(path : str):
     data = pd.read_csv(path, sep='\t')
     data.index = data['EPSD ID']
     grouped = data.groupby(data['EPSD ID'])
@@ -301,7 +317,7 @@ def main(args):
     pbert, tokenizer = get_bert_model()
     train_X, test_X, train_y, test_y = train_test_split(inputs, outputs, random_state=args.seed)
     model = ProteinEmbed(pbert)
-    # model = torch.compile(model)
+    model = torch.compile(model)
     model.to(device)
     train_dataset = ProteinDataset(tokenizer=tokenizer, max_length=args.max_length, inputs=train_X, targets=train_y)
     test_dataset = ProteinDataset(tokenizer=tokenizer, max_length=args.max_length, inputs=test_X, targets=test_y)
