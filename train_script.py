@@ -19,8 +19,8 @@ from transformers import TrainingArguments, Trainer, BertModel, BertTokenizer, s
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--seed', type=int, help='Random seed', default=42)
-parser.add_argument('--batch_size', type=int, help='Batch size', default=100)
-parser.add_argument('--epochs', type=int, help='Number of training epochs', default=50)
+parser.add_argument('--batch_size', type=int, help='Batch size', default=64)
+parser.add_argument('--epochs', type=int, help='Number of training epochs', default=20)
 parser.add_argument('--max_length', type=int, help='Maximum sequence length (shorter sequences will be pruned)', default=2048)
 parser.add_argument('--fasta', type=str, help='Path to the FASTA protein database', default='./epsd_sequences/Total.fasta')
 parser.add_argument('--phospho', type=str, help='Path to the phoshporylarion dataset', default='./epsd_sequences/Total.txt')
@@ -177,7 +177,6 @@ class ProteinEmbed(nn.Module):
         self.n_labels = n_labels
         self.dropout = nn.Dropout(dropout)
         self.classifier = nn.Linear(self.base.config.hidden_size, self.n_labels)
-        self.activation = F.softmax
         self.init_weights()
 
         if transfer_learning:
@@ -202,8 +201,9 @@ class ProteinEmbed(nn.Module):
         labels=None,
         output_attentions=None,
         output_hidden_states=None,
+        return_dict = None,
     ):
-        out = self.base(
+        outputs = self.base(
             input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
@@ -212,12 +212,12 @@ class ProteinEmbed(nn.Module):
             inputs_embeds=inputs_embeds,
             output_attentions=output_attentions,
             output_hidden_states=True,
+            
         )
 
-        sequence_output = out.hidden_states[-1]
+        sequence_output = outputs[0]
         sequence_output = self.dropout(sequence_output)
         logits = self.classifier(sequence_output)
-        outputs = self.activation(logits, -1)
 
         if labels is not None:
             loss_fct = CrossEntropyLoss()
@@ -231,9 +231,19 @@ class ProteinEmbed(nn.Module):
                 loss = loss_fct(active_logits, active_labels)
             else:
                 loss = loss_fct(logits.view(-1, self.n_labels), labels.view(-1))
-            outputs = (loss, outputs)
 
-        return outputs  # (loss), scores, (hidden_states), (attentions)
+        if not return_dict:
+            output = (logits,) + outputs[2:]
+            return ((loss,) + output) if loss is not None else output
+
+        return {
+            'loss' : loss,
+            'logits' : logits,
+            'hidden_states' : outputs.hidden_states,
+            'attentions' : outputs.attentions,
+            'outputs' : (loss, outputs)
+        }
+
     
 def get_bert_model():
     pbert = BertModel.from_pretrained("Rostlab/prot_bert")
@@ -278,7 +288,6 @@ def train_model(train_ds, test_ds, model, tokenizer,
         args,
         train_dataset=train_ds,
         eval_dataset=test_ds,
-        tokenizer=tokenizer,
         compute_metrics=compute_metrics
     )
 
@@ -290,10 +299,9 @@ def train_model(train_ds, test_ds, model, tokenizer,
 def main(args):
     inputs, outputs = get_inputs_outputs(args.fasta, args.phospho)
     pbert, tokenizer = get_bert_model()
-    model = ProteinEmbed(pbert)
-    model.to(device)
     train_X, test_X, train_y, test_y = train_test_split(inputs, outputs, random_state=args.seed)
     model = ProteinEmbed(pbert)
+    # model = torch.compile(model)
     model.to(device)
     train_dataset = ProteinDataset(tokenizer=tokenizer, max_length=args.max_length, inputs=train_X, targets=train_y)
     test_dataset = ProteinDataset(tokenizer=tokenizer, max_length=args.max_length, inputs=test_X, targets=test_y)
