@@ -25,6 +25,7 @@ parser.add_argument('--max_length', type=int, help='Maximum sequence length (sho
 parser.add_argument('--fasta', type=str, help='Path to the FASTA protein database', default='./phosphosite_sequences/Phosphosite_seq.fasta')
 parser.add_argument('--phospho', type=str, help='Path to the phoshporylarion dataset', default='./phosphosite_sequences/Phosphorylation_site_dataset')
 parser.add_argument('--dataset_path', type=str, help='Path to the protein dataset. Expects a dataframe with columns ("id", "sequence", "sites"). "sequence" is the protein AA string, "sites" is a list of phosphorylation sites.', default='./phosphosite_sequences/phosphosite_df.json')
+parser.add_argument('--pretokenized', type=bool, help='Input dataset is already pretokenized', default=False)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
