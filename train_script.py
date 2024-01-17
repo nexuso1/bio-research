@@ -22,9 +22,9 @@ parser.add_argument('--seed', type=int, help='Random seed', default=42)
 parser.add_argument('--batch_size', type=int, help='Batch size', default=64)
 parser.add_argument('--epochs', type=int, help='Number of training epochs', default=20)
 parser.add_argument('--max_length', type=int, help='Maximum sequence length (shorter sequences will be pruned)', default=2048)
-parser.add_argument('--fasta', type=str, help='Path to the FASTA protein database', default='./epsd_sequences/Total.fasta')
-parser.add_argument('--phospho', type=str, help='Path to the phoshporylarion dataset', default='./epsd_sequences/Total.txt')
-
+parser.add_argument('--fasta', type=str, help='Path to the FASTA protein database', default='./phosphosite_sequences/Phosphosite_seq.fasta')
+parser.add_argument('--phospho', type=str, help='Path to the phoshporylarion dataset', default='./phosphosite_sequences/Phosphorylation_site_dataset')
+parser.add_argument('--dataset_path', type=str, help='Path to the protein dataset. Expects a dataframe with columns ("id", "sequence", "sites"). "sequence" is the protein AA string, "sites" is a list of phosphorylation sites.', default='./phosphosite_sequences/phosphosite_df.json')
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
@@ -51,7 +51,7 @@ def load_phospho(path : str):
     
     Returns a dictionary in format {ACC_ID : [list of phosphoryllation site indices]}
     """
-    dataset = pd.read_csv(path)
+    dataset = pd.read_csv(path, sep='\t', skiprows=3)
     dataset['position'] = dataset['MOD_RSD'].str.extract(r'[\w]([\d]+)-p')
     grouped = dataset.groupby(dataset['ACC_ID'])
     res = {}
@@ -71,17 +71,11 @@ def load_phospho_epsd(path : str):
 
     return res
 
-def get_inputs_outputs(fasta_path, phospho_path):
-    fasta = load_fasta(fasta_path)
-    phospho = load_phospho(phospho_path)
-
-    inputs = []
-    targets = []
-    for key in phospho.keys():
-        inputs.append(fasta[key])
-        targets.append(phospho[key])
-
-    return inputs, targets
+def get_inputs_outputs(dataset_path):
+    df = pd.read_json(dataset_path)
+    df = df.dropna()
+    df['sites'] = df['sites'].apply(lambda x: [eval(i) for i in x])
+    return df['sequence'], df['sites']
 
 class ProteinDataset(Dataset):
     def __init__(self,tokenizer, max_length,  
@@ -119,30 +113,23 @@ class ProteinDataset(Dataset):
         Remove all sequences that are longer than self.max_len from the dataset.
         Updates the self.x and self.y attributes.
         """
-        keep_x = []
-        keep_y = []
-
-        count = 0
-
-        for i in range(len(self.x)):
-            if len(self.x[i]) > self.max_len:
-                count += 1
-                continue
-
-            keep_x.append(self.x[i])
-            keep_y.append(self.y[i])
+        mask = self.x.apply(lambda x: len(x) < self.max_len)
+        new_x = self.x.where(mask)
+        new_y = self.y.where(mask)
 
         if self.verbose > 0:
+            count = self.x.shape[0] - new_x.shape[0]
             print(f"Removed {count} sequences from the dataset longer than {self.max_len}.")
 
-        self.x = keep_x
-        self.y = keep_y
+        self.x = new_x
+        self.y = new_y
 
     def prep_seq(self, seq):
         """
         Prepares the given sequence for the model by subbing rare AAs for X and adding 
         padding between AAs. Required by the base model.
         """
+        print(seq)
         return " ".join(list(re.sub(r"[UZOB]", "X", seq)))
 
     def prep_target(self, enc, target):
@@ -163,8 +150,8 @@ class ProteinDataset(Dataset):
         return res
 
     def __getitem__(self, index):
-        seq = self.x[index]
-        target =self.y[index]
+        seq = self.x.iloc[index]
+        target =self.y.iloc[index]
         seq = self.prep_seq(seq)
         encoding = self.tokenizer(
             seq,
@@ -184,7 +171,7 @@ class ProteinDataset(Dataset):
         }
 
     def __len__(self):
-        return len(self.x)
+        return self.x.shape[0]
 
 class ProteinEmbed(nn.Module):
     def __init__(self, base_model : nn.Module, dropout = 0.2, n_labels = 2, transfer_learning=True) -> None:
@@ -313,7 +300,7 @@ def train_model(train_ds, test_ds, model, tokenizer,
     return tokenizer, model, trainer.state.log_history
 
 def main(args):
-    inputs, outputs = get_inputs_outputs(args.fasta, args.phospho)
+    inputs, outputs = get_inputs_outputs(args.dataset_path)
     pbert, tokenizer = get_bert_model()
     train_X, test_X, train_y, test_y = train_test_split(inputs, outputs, random_state=args.seed)
     model = ProteinEmbed(pbert)
