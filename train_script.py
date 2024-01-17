@@ -10,17 +10,17 @@ import argparse
 import re
 from datetime import datetime
 
-from torch.utils.data import Dataset
+from datasets import Dataset
 from torch.nn import CrossEntropyLoss
 from Bio import SeqIO
 from sklearn.model_selection import train_test_split
-from transformers import TrainingArguments, Trainer, BertModel, BertTokenizer, set_seed
+from transformers import TrainingArguments, Trainer, BertModel, BertTokenizer, set_seed, DataCollatorForTokenClassification
 
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--seed', type=int, help='Random seed', default=42)
-parser.add_argument('--batch_size', type=int, help='Batch size', default=64)
-parser.add_argument('--epochs', type=int, help='Number of training epochs', default=20)
+parser.add_argument('--batch_size', type=int, help='Batch size', default=1)
+parser.add_argument('--epochs', type=int, help='Number of training epochs', default=1)
 parser.add_argument('--max_length', type=int, help='Maximum sequence length (shorter sequences will be pruned)', default=2048)
 parser.add_argument('--fasta', type=str, help='Path to the FASTA protein database', default='./phosphosite_sequences/Phosphosite_seq.fasta')
 parser.add_argument('--phospho', type=str, help='Path to the phoshporylarion dataset', default='./phosphosite_sequences/Phosphorylation_site_dataset')
@@ -74,8 +74,14 @@ def load_phospho_epsd(path : str):
 def get_inputs_outputs(dataset_path):
     df = pd.read_json(dataset_path)
     df = df.dropna()
-    df['sites'] = df['sites'].apply(lambda x: [eval(i) for i in x])
-    return df['sequence'], df['sites']
+    df['sites'] = df['sites'].apply(lambda x: [eval(i) - 1 for i in x])
+    labels = [np.zeros(shape=len(s)) for s in df['sequence']]
+    for i, l in enumerate(labels):
+        l[df.iloc[i]['sites']] = 1
+
+    df['label'] = labels
+    
+    return df[['sequence', 'label']]
 
 class ProteinDataset(Dataset):
     def __init__(self,tokenizer, max_length,  
@@ -107,6 +113,7 @@ class ProteinDataset(Dataset):
         self.max_len = max_length
 
         self.prune_long_sequences()
+        self.prep_data()
 
     def prune_long_sequences(self) -> None:
         """
@@ -114,8 +121,8 @@ class ProteinDataset(Dataset):
         Updates the self.x and self.y attributes.
         """
         mask = self.x.apply(lambda x: len(x) < self.max_len)
-        new_x = self.x.where(mask)
-        new_y = self.y.where(mask)
+        new_x = self.x[mask]
+        new_y = self.y[mask]
 
         if self.verbose > 0:
             count = self.x.shape[0] - new_x.shape[0]
@@ -129,8 +136,16 @@ class ProteinDataset(Dataset):
         Prepares the given sequence for the model by subbing rare AAs for X and adding 
         padding between AAs. Required by the base model.
         """
-        print(seq)
-        return " ".join(list(re.sub(r"[UZOB]", "X", seq)))
+        # print(seq)
+        cleaned = " ".join(list(re.sub(r"[UZOB]", "X", seq)))
+        return cleaned
+    
+    def prep_data(self):
+        prepped = np.array(self.x.apply(self.prep_seq), dtype=np.int32)
+        tokenized = self.tokenizer(prepped)
+        targets = [self.prep_target(tokenized.iloc[i], self.y.iloc[i]) for i in range(self.y.shape[0])]
+        self.data = tokenized
+        self.targets = targets
 
     def prep_target(self, enc, target):
         """
@@ -150,20 +165,8 @@ class ProteinDataset(Dataset):
         return res
 
     def __getitem__(self, index):
-        seq = self.x.iloc[index]
-        target =self.y.iloc[index]
-        seq = self.prep_seq(seq)
-        encoding = self.tokenizer(
-            seq,
-            add_special_tokens=True,
-            max_length = self.max_len,
-            return_token_type_ids=False,
-            padding='max_length',
-            return_attention_mask=True,
-            return_tensors='pt'
-        )
-
-        target = self.prep_target(encoding, target)
+        encoding = self.data.iloc[index]
+        target =self.y[index]
         return {
             'input_ids' : encoding['input_ids'].flatten(),
             'attention_mask' : encoding['attention_mask'].flatten(),
@@ -265,6 +268,15 @@ def compute_metrics(eval_pred, metric):
     preds, labels = eval_pred
     return metric.compute(predictions = preds, references=labels)
 
+def create_dataset(tokenizer, seqs, labels, max_length):
+    tokenized = tokenizer(seqs, max_length=max_length, padding=False, truncation=True)
+    dataset = Dataset.from_dict(tokenized)
+    # we need to cut of labels after max_length positions for the data collator to add the correct padding ((max_length - 1) + 1 special tokens)
+    labels = [l[: max_length - 1] for l in labels] 
+    dataset = dataset.add_column("labels", labels)
+     
+    return dataset
+
 def train_model(train_ds, test_ds, model, tokenizer,
                 lr=3e-4, epochs=1, batch=50, val_batch=100, accum=1, seed=42, deepspeed=None):
 
@@ -274,7 +286,8 @@ def train_model(train_ds, test_ds, model, tokenizer,
     # Huggingface Trainer arguments
     args = TrainingArguments(
         "./",
-        evaluation_strategy = "epoch",
+        evaluation_strategy = "steps",
+        eval_steps=10,
         logging_strategy = "epoch",
         save_strategy = "no",
         learning_rate=lr,
@@ -284,6 +297,8 @@ def train_model(train_ds, test_ds, model, tokenizer,
         num_train_epochs=epochs,
         seed = seed
     )
+
+    data_collator = DataCollatorForTokenClassification(tokenizer)
     
     # Trainer
     trainer = Trainer(
@@ -291,6 +306,8 @@ def train_model(train_ds, test_ds, model, tokenizer,
         args,
         train_dataset=train_ds,
         eval_dataset=test_ds,
+        tokenizer=tokenizer, 
+        data_collator=data_collator,
         compute_metrics=compute_metrics
     )
 
@@ -299,18 +316,26 @@ def train_model(train_ds, test_ds, model, tokenizer,
 
     return tokenizer, model, trainer.state.log_history
 
-def main(args):
-    inputs, outputs = get_inputs_outputs(args.dataset_path)
-    pbert, tokenizer = get_bert_model()
-    train_X, test_X, train_y, test_y = train_test_split(inputs, outputs, random_state=args.seed)
-    model = ProteinEmbed(pbert)
-    model = torch.compile(model)
-    model.to(device)
-    train_dataset = ProteinDataset(tokenizer=tokenizer, max_length=args.max_length, inputs=train_X, targets=train_y)
-    test_dataset = ProteinDataset(tokenizer=tokenizer, max_length=args.max_length, inputs=test_X, targets=test_y)
+def preprocess_data(df : pd.DataFrame):
+    df['sequence'] = df['sequence'].str.replace('|'.join(["O","B","U","Z"]),"X",regex=True)
+    df['sequence'] = df.apply(lambda row : " ".join(row["sequence"]), axis = 1)
+    return df
 
-    return train_model(train_ds=train_dataset, test_ds=test_dataset, model=model, tokenizer=tokenizer, seed=args.seed,
-                       batch=args.batch_size, epochs=args.epochs)
+def main(args):
+    data = get_inputs_outputs(args.dataset_path)
+    prepped_data = preprocess_data(data)
+    pbert, tokenizer = get_bert_model()
+    train_df, test_df = train_test_split(prepped_data, random_state=args.seed)
+    model = ProteinEmbed(pbert)
+    #model = torch.compile(model)
+    model.to(device)
+    train_dataset = create_dataset(tokenizer=tokenizer, seqs=list(train_df['sequence']), labels=list(train_df['label']),
+                                   max_length=args.max_length)
+    test_dataset = create_dataset(tokenizer=tokenizer, seqs=list(test_df['sequence']), labels=list(test_df['label']), 
+                                  max_length=args.max_length)
+
+    return train_model(train_ds=train_dataset, test_ds=test_dataset, model=model, tokenizer=tokenizer,
+                       seed=args.seed, batch=args.batch_size, epochs=args.epochs)
 
 if __name__ == '__main__':
     args = parser.parse_args()
