@@ -208,7 +208,7 @@ class ProteinEmbed(nn.Module):
         labels=None,
         output_attentions=None,
         output_hidden_states=None,
-        return_dict = None,
+        return_dict = False,
     ):
         outputs = self.base(
             input_ids,
@@ -288,7 +288,7 @@ def train_model(train_ds, test_ds, model, tokenizer,
     args = TrainingArguments(
         "./",
         evaluation_strategy = "steps",
-        eval_steps=10,
+        eval_steps=100,
         logging_strategy = "epoch",
         save_strategy = "no",
         learning_rate=lr,
@@ -296,7 +296,8 @@ def train_model(train_ds, test_ds, model, tokenizer,
         per_device_eval_batch_size=val_batch,
         gradient_accumulation_steps=accum,
         num_train_epochs=epochs,
-        seed = seed
+        seed = seed,
+        remove_unused_columns=False
     )
 
     data_collator = DataCollatorForTokenClassification(tokenizer)
@@ -323,18 +324,25 @@ def preprocess_data(df : pd.DataFrame):
     return df
 
 def main(args):
-    data = get_inputs_outputs(args.dataset_path)
-    prepped_data = preprocess_data(data)
     pbert, tokenizer = get_bert_model()
-    train_df, test_df = train_test_split(prepped_data, random_state=args.seed)
-    model = ProteinEmbed(pbert)
-    #model = torch.compile(model)
-    model.to(device)
-    train_dataset = create_dataset(tokenizer=tokenizer, seqs=list(train_df['sequence']), labels=list(train_df['label']),
-                                   max_length=args.max_length)
-    test_dataset = create_dataset(tokenizer=tokenizer, seqs=list(test_df['sequence']), labels=list(test_df['label']), 
-                                  max_length=args.max_length)
+    if not args.pretokenized:
+        data = get_inputs_outputs(args.dataset_path)
+        prepped_data = preprocess_data(data)
+        train_df, test_df = train_test_split(prepped_data, random_state=args.seed)
+        train_dataset = create_dataset(tokenizer=tokenizer, seqs=list(train_df['sequence']), labels=list(train_df['label']),
+                                    max_length=args.max_length)
+        test_dataset = create_dataset(tokenizer=tokenizer, seqs=list(test_df['sequence']), labels=list(test_df['label']), 
+                                    max_length=args.max_length)
+        
+    else:
+        data = pd.DataFrame.read_json(args.i)
+        train_df, test_df = train_test_split(prepped_data, random_state=args.seed)
+        train_dataset = Dataset.from_pandas(train_df)
+        test_dataset = Dataset.from_pandas(test_df)
 
+    model = ProteinEmbed(pbert)
+    model = torch.compile(model)
+    model.to(device)
     return train_model(train_ds=train_dataset, test_ds=test_dataset, model=model, tokenizer=tokenizer,
                        seed=args.seed, batch=args.batch_size, epochs=args.epochs)
 
