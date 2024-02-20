@@ -58,18 +58,13 @@ class TokenClassifier(nn.Module):
             nn.Linear(self.base.config.hidden_size, 2048),
             nn.BatchNorm1d(2048),
             nn.ReLU(),
-            nn.Linear(2048, n_labels),
+            nn.Linear(1024, n_labels),
             nn.BatchNorm1d(2),
             nn.ReLU()
         )
-        self.init_weights()
 
         if transfer_learning:
             self.freeze_base()
-
-    def init_weights(self):
-        torch.nn.init.normal_(self.classifier.weight)
-        torch.nn.init.zeros_(self.classifier.bias)
         
     def freeze_base(self):
         for p in self.base.parameters():
@@ -100,7 +95,6 @@ class TokenClassifier(nn.Module):
         )
 
         sequence_output = outputs[0]
-        sequence_output = self.dropout(sequence_output)
         logits = self.classifier(sequence_output)
 
         if labels is not None:
