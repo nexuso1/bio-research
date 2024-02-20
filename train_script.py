@@ -58,9 +58,10 @@ class TokenClassifier(nn.Module):
             nn.Linear(self.base.config.hidden_size, 2048),
             nn.BatchNorm1d(2048),
             nn.ReLU(),
-            nn.Linear(1024, n_labels),
-            nn.BatchNorm1d(2),
-            nn.ReLU()
+            nn.Linear(2048, 1024),
+            nn.BatchNorm1d(1024),
+            nn.ReLU(),
+            nn.Linear(1024, n_labels)
         )
 
         if transfer_learning:
