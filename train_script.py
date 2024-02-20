@@ -8,6 +8,9 @@ import torch.nn.functional as F
 import numpy as np
 import argparse
 import re
+import json
+import os
+
 from datetime import datetime
 
 from datasets import Dataset
@@ -21,11 +24,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--seed', type=int, help='Random seed', default=42)
 parser.add_argument('--batch_size', type=int, help='Batch size', default=1)
 parser.add_argument('--epochs', type=int, help='Number of training epochs', default=1)
-parser.add_argument('--max_length', type=int, help='Maximum sequence length (shorter sequences will be pruned)', default=2048)
+parser.add_argument('--max_length', type=int, help='Maximum sequence length (shorter sequences will be pruned)', default=1024)
 parser.add_argument('--fasta', type=str, help='Path to the FASTA protein database', default='./phosphosite_sequences/Phosphosite_seq.fasta')
 parser.add_argument('--phospho', type=str, help='Path to the phoshporylarion dataset', default='./phosphosite_sequences/Phosphorylation_site_dataset')
 parser.add_argument('--dataset_path', type=str, help='Path to the protein dataset. Expects a dataframe with columns ("id", "sequence", "sites"). "sequence" is the protein AA string, "sites" is a list of phosphorylation sites.', default='./phosphosite_sequences/phosphosite_df.json')
 parser.add_argument('--pretokenized', type=bool, help='Input dataset is already pretokenized', default=False)
+parser.add_argument('--val_batch', type=int, help='Validation batch size', default=2)
+parser.add_argument('--clusters', type=str, help='Path to clusters', default='clusters_30.csv')
+parser.add_argument('-o', type=str, help='Output folder', default='output')
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
@@ -82,7 +88,7 @@ def get_inputs_outputs(dataset_path):
 
     df['label'] = labels
     
-    return df[['sequence', 'label']]
+    return df[['id', 'sequence', 'label']]
 
 class ProteinDataset(Dataset):
     def __init__(self,tokenizer, max_length,  
@@ -178,7 +184,7 @@ class ProteinDataset(Dataset):
         return self.x.shape[0]
 
 class ProteinEmbed(nn.Module):
-    def __init__(self, base_model : nn.Module, dropout = 0.2, n_labels = 2, transfer_learning=True) -> None:
+    def __init__(self, base_model : nn.Module, dropout = 0.2, n_labels = 2, transfer_learning=False) -> None:
         super(ProteinEmbed, self).__init__()
         self.base = base_model
         self.n_labels = n_labels
@@ -218,8 +224,7 @@ class ProteinEmbed(nn.Module):
             head_mask=head_mask,
             inputs_embeds=inputs_embeds,
             output_attentions=output_attentions,
-            output_hidden_states=True,
-            
+            output_hidden_states=True
         )
 
         sequence_output = outputs[0]
@@ -243,13 +248,13 @@ class ProteinEmbed(nn.Module):
             output = (logits,) + outputs[2:]
             return ((loss,) + output) if loss is not None else output
 
-        return {
-            'loss' : loss,
-            'logits' : logits,
-            'hidden_states' : outputs.hidden_states,
-            'attentions' : outputs.attentions,
-            'outputs' : (loss, outputs)
-        }
+        #return {
+            #'loss' : loss,
+            #'logits' : logits,
+           # 'hidden_states' : outputs.hidden_states,
+          #  'attentions' : outputs.attentions,
+         #   'outputs' : (loss, outputs)
+        #}
 
     
 def get_bert_model():
@@ -278,26 +283,45 @@ def create_dataset(tokenizer, seqs, labels, max_length):
      
     return dataset
 
+def load_clusters(path):
+    return pd.read_csv(path, sep='\t', names=['cluster_rep', 'cluster_mem'])
+
+def split_train_test_clusters(args, clusters : pd.DataFrame, test_size : float):
+    reps = clusters['cluster_rep'].unique() # Unique cluster representatives
+    np.random.shuffle(reps) # in-place shuffle
+    train_last_idx = int(reps.shape[0] * (1 - test_size))
+    train = reps[:train_last_idx]
+    test = reps[train_last_idx:]
+
+    return set(train), set(test)
+
+def get_train_test_prots(clusters, train_clusters, test_clusters):
+    train_mask = [x in train_clusters for x in clusters['cluster_rep']]
+    test_mask = [x in test_clusters for x in clusters['cluster_rep']]
+    train_prots = clusters['cluster_mem'][train_mask]
+    test_prots = clusters['cluster_mem'][test_mask]
+    return set(train_prots), set(test_prots)
+
 def train_model(train_ds, test_ds, model, tokenizer,
-                lr=3e-4, epochs=1, batch=50, val_batch=100, accum=1, seed=42, deepspeed=None):
+                lr=3e-4, epochs=1, batch=50, val_batch=2, accum=6, seed=42, deepspeed=None):
 
     # Set all random seeds
     set_seeds(seed)
 
     # Huggingface Trainer arguments
     args = TrainingArguments(
-        "./",
-        evaluation_strategy = "steps",
-        eval_steps=100,
+        evaluation_strategy = "no",
         logging_strategy = "epoch",
-        save_strategy = "no",
+        save_strategy = "epoch",
+        output_dir = f"/storage/praha1/home/nexuso1/bio-research/temp_output",
         learning_rate=lr,
         per_device_train_batch_size=batch,
         per_device_eval_batch_size=val_batch,
         gradient_accumulation_steps=accum,
         num_train_epochs=epochs,
         seed = seed,
-        remove_unused_columns=False
+        remove_unused_columns=False,
+        eval_accumulation_steps=2
     )
 
     data_collator = DataCollatorForTokenClassification(tokenizer)
@@ -323,33 +347,62 @@ def preprocess_data(df : pd.DataFrame):
     df['sequence'] = df.apply(lambda row : " ".join(row["sequence"]), axis = 1)
     return df
 
+def split_dataset(data : pd.DataFrame, train_clusters, test_clusters):
+    train_mask = data['id'].apply(lambda x: x in train_clusters)
+    test_mask = data['id'].apply(lambda x: x in test_clusters)
+    return data[train_mask], data[test_mask]
+
+def save_as_string(obj, path):
+    dirname = os.path.dirname(path)
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+
+    with open(path, 'w') as f:
+        json.dump(obj, f)
+
 def main(args):
     pbert, tokenizer = get_bert_model()
     if not args.pretokenized:
         data = get_inputs_outputs(args.dataset_path)
         prepped_data = preprocess_data(data)
-        train_df, test_df = train_test_split(prepped_data, random_state=args.seed)
+        clusters = load_clusters(args.clusters)
+        
+        train_clusters, test_clusters = split_train_test_clusters(args, clusters, test_size=0.2) # Split clusters into train and test sets
+        train_prots, test_prots = get_train_test_prots(clusters, train_clusters, test_clusters) # Extract the train proteins and test proteins
+        train_df, test_df = split_dataset(data, train_prots, test_prots) # Split data according to the protein ids
+        print(f'Train dataset shape: {train_df.shape}')
+        print(f'Test dataset shape: {test_df.shape}')
+        
+        test_path = f'./{args.o}/test_data.json'
+        save_as_string(list(test_prots), test_path)
+        print(f'Test prots saved to {test_path}')
+        
         train_dataset = create_dataset(tokenizer=tokenizer, seqs=list(train_df['sequence']), labels=list(train_df['label']),
-                                    max_length=args.max_length)
+                                    max_length=args.max_length) # Create a huggingface dataset
         test_dataset = create_dataset(tokenizer=tokenizer, seqs=list(test_df['sequence']), labels=list(test_df['label']), 
                                     max_length=args.max_length)
-        
     else:
-        data = pd.DataFrame.read_json(args.i)
+        data = pd.read_json(args.dataset_path)
         train_df, test_df = train_test_split(prepped_data, random_state=args.seed)
         train_dataset = Dataset.from_pandas(train_df)
         test_dataset = Dataset.from_pandas(test_df)
 
     model = ProteinEmbed(pbert)
-    model = torch.compile(model)
-    model.to(device)
-    return train_model(train_ds=train_dataset, test_ds=test_dataset, model=model, tokenizer=tokenizer,
-                       seed=args.seed, batch=args.batch_size, epochs=args.epochs)
+    compiled_model = torch.compile(model)
+    compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
+    tokenizer, compiled_model, history = train_model(train_ds=train_dataset, test_ds=test_dataset, model=compiled_model, tokenizer=tokenizer,
+                       seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.epochs)
+
+    return tokenizer, model, history
 
 if __name__ == '__main__':
     args = parser.parse_args()
     tokenizer, model, history = main(args)
     now = datetime.now()
 
-    name = now.strftime("model_%Y-%M-%d_%H:%M:%S")
-    torch.save(model, f'./output/{name}')
+    name = "stratified_fine_tuned"
+
+    if not os.path.exists(f'./{args.o}'):
+        os.mkdir(f'./{args.o}')
+
+    torch.save(model, f'./{args.o}/{name}')
