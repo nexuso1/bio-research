@@ -54,8 +54,14 @@ class TokenClassifier(nn.Module):
         super(TokenClassifier, self).__init__()
         self.base = base_model
         self.n_labels = n_labels
-        self.dropout = nn.Dropout(dropout)
-        self.classifier = nn.Linear(self.base.config.hidden_size, self.n_labels)
+        self.classifier = nn.Sequential(
+            nn.Linear(self.base.config.hidden_size, 2048),
+            nn.BatchNorm1d(2048),
+            nn.ReLU(),
+            nn.Linear(2048, n_labels),
+            nn.BatchNorm1d(2),
+            nn.ReLU()
+        )
         self.init_weights()
 
         if transfer_learning:
@@ -275,7 +281,7 @@ if __name__ == '__main__':
     tokenizer, model, history = main(args)
     now = datetime.now()
 
-    name = "stratified_fine_tuned"
+    name = "fine_tuned_2048_1024_bn_nodropout"
 
     if not os.path.exists(f'./{args.o}'):
         os.mkdir(f'./{args.o}')
