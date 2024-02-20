@@ -5,6 +5,14 @@ import re
 from Bio import SeqIO
 from datasets import Dataset
 
+def load_torch_model(path):
+    import torch
+
+    with open(path, 'r') as f:
+        model = torch.load(f)
+
+    return model
+
 def load_clusters(path):
     return pd.read_csv(path, sep='\t', names=['cluster_rep', 'cluster_mem'])
 

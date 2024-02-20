@@ -33,7 +33,7 @@ parser.add_argument('-o', type=str, help='Output folder', default='output')
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
-def get_inputs_outputs(dataset_path):
+def load_data(dataset_path):
     df = pd.read_json(dataset_path)
     df = df.dropna()
     df['sites'] = df['sites'].apply(lambda x: [eval(i) - 1 for i in x])
@@ -45,9 +45,13 @@ def get_inputs_outputs(dataset_path):
     
     return df[['id', 'sequence', 'label']]
 
-class ProteinEmbed(nn.Module):
+class TokenClassifier(nn.Module):
+    """
+    Model that consist of a base embedding model, and a token classification head at the end, using 
+    the last hidden state as its output.
+    """
     def __init__(self, base_model : nn.Module, dropout = 0.2, n_labels = 2, transfer_learning=False) -> None:
-        super(ProteinEmbed, self).__init__()
+        super(TokenClassifier, self).__init__()
         self.base = base_model
         self.n_labels = n_labels
         self.dropout = nn.Dropout(dropout)
@@ -205,16 +209,25 @@ def train_model(train_ds, test_ds, model, tokenizer,
     return tokenizer, model, trainer.state.log_history
 
 def preprocess_data(df : pd.DataFrame):
+    """
+    Preprocessing for Pbert/ProtT5
+    """
     df['sequence'] = df['sequence'].str.replace('|'.join(["O","B","U","Z"]),"X",regex=True)
     df['sequence'] = df.apply(lambda row : " ".join(row["sequence"]), axis = 1)
     return df
 
 def split_dataset(data : pd.DataFrame, train_clusters, test_clusters):
+    """
+    Splits data into train and test data according to train and test clusters.
+    """
     train_mask = data['id'].apply(lambda x: x in train_clusters)
     test_mask = data['id'].apply(lambda x: x in test_clusters)
     return data[train_mask], data[test_mask]
 
 def save_as_string(obj, path):
+    """
+    Saves the given object as a JSON string.
+    """
     dirname = os.path.dirname(path)
     if not os.path.exists(dirname):
         os.makedirs(dirname)
@@ -225,7 +238,7 @@ def save_as_string(obj, path):
 def main(args):
     pbert, tokenizer = get_bert_model()
     if not args.pretokenized:
-        data = get_inputs_outputs(args.dataset_path)
+        data = load_data(args.dataset_path)
         prepped_data = preprocess_data(data)
         clusters = load_clusters(args.clusters)
         
@@ -249,7 +262,7 @@ def main(args):
         train_dataset = Dataset.from_pandas(train_df)
         test_dataset = Dataset.from_pandas(test_df)
 
-    model = ProteinEmbed(pbert)
+    model = TokenClassifier(pbert)
     compiled_model = torch.compile(model)
     compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
     tokenizer, compiled_model, history = train_model(train_ds=train_dataset, test_ds=test_dataset, model=compiled_model, tokenizer=tokenizer,
