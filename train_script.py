@@ -165,7 +165,7 @@ def get_train_test_prots(clusters, train_clusters, test_clusters):
     test_prots = clusters['cluster_mem'][test_mask]
     return set(train_prots), set(test_prots)
 
-def train_model(train_ds, test_ds, model, tokenizer,
+def train_model(args, train_ds, test_ds, model, tokenizer,
                 lr=3e-4, epochs=1, batch=50, val_batch=2, accum=6, seed=42, deepspeed=None):
 
     # Set all random seeds
@@ -176,7 +176,7 @@ def train_model(train_ds, test_ds, model, tokenizer,
         evaluation_strategy = "no",
         logging_strategy = "epoch",
         save_strategy = "epoch",
-        output_dir = f"/storage/praha1/home/nexuso1/bio-research/temp_output",
+        output_dir = f"/storage/praha1/home/nexuso1/bio-research/temp_output/{args.n}",
         learning_rate=lr,
         per_device_train_batch_size=batch,
         per_device_eval_batch_size=val_batch,
@@ -262,7 +262,7 @@ def main(args):
     model = TokenClassifier(pbert, fine_tune=args.fine_tune)
     compiled_model = torch.compile(model)
     compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
-    tokenizer, compiled_model, history = train_model(train_ds=train_dataset, test_ds=test_dataset, model=compiled_model, tokenizer=tokenizer,
+    tokenizer, compiled_model, history = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=compiled_model, tokenizer=tokenizer,
                        seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.epochs)
 
     return tokenizer, model, history
