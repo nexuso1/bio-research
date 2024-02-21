@@ -28,6 +28,7 @@ parser.add_argument('--dataset_path', type=str, help='Path to the protein datase
 parser.add_argument('--pretokenized', type=bool, help='Input dataset is already pretokenized', default=False)
 parser.add_argument('--val_batch', type=int, help='Validation batch size', default=2)
 parser.add_argument('--clusters', type=str, help='Path to clusters', default='clusters_30.csv')
+parser.add_argument('--fine_tune', type=bool, help='Use fine tuning on the base model or not. Default is False', default=False)
 parser.add_argument('-o', type=str, help='Output folder', default='output')
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -50,7 +51,7 @@ class TokenClassifier(nn.Module):
     Model that consist of a base embedding model, and a token classification head at the end, using 
     the last hidden state as its output.
     """
-    def __init__(self, base_model : nn.Module, dropout = 0.2, n_labels = 2, transfer_learning=False) -> None:
+    def __init__(self, base_model : nn.Module, dropout = 0.2, n_labels = 2, fine_tune=False) -> None:
         super(TokenClassifier, self).__init__()
         self.base = base_model
         self.n_labels = n_labels
@@ -62,7 +63,7 @@ class TokenClassifier(nn.Module):
             nn.Linear(1024, n_labels)
         )
 
-        if transfer_learning:
+        if not fine_tune:
             self.freeze_base()
         
     def freeze_base(self):
@@ -261,7 +262,7 @@ def main(args):
         train_dataset = Dataset.from_pandas(train_df)
         test_dataset = Dataset.from_pandas(test_df)
 
-    model = TokenClassifier(pbert)
+    model = TokenClassifier(pbert, fine_tune=args.fine_tune)
     compiled_model = torch.compile(model)
     compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
     tokenizer, compiled_model, history = train_model(train_ds=train_dataset, test_ds=test_dataset, model=compiled_model, tokenizer=tokenizer,
@@ -274,7 +275,7 @@ if __name__ == '__main__':
     tokenizer, model, history = main(args)
     now = datetime.now()
 
-    name = "fine_tuned_2048_1024_bn_nodropout"
+    name = "fine_tuned_2048_1024_nodropout"
 
     if not os.path.exists(f'./{args.o}'):
         os.mkdir(f'./{args.o}')
