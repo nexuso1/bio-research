@@ -154,11 +154,7 @@ def load_clusters(path):
 
 def split_train_test_clusters(args, clusters : pd.DataFrame, test_size : float):
     reps = clusters['cluster_rep'].unique() # Unique cluster representatives
-    np.random.shuffle(reps) # in-place shuffle
-    train_last_idx = int(reps.shape[0] * (1 - test_size))
-    train = reps[:train_last_idx]
-    test = reps[train_last_idx:]
-
+    train, test = train_test_split(reps, test_size=test_size, random_state=args.seed)
     return set(train), set(test)
 
 def get_train_test_prots(clusters, train_clusters, test_clusters):
