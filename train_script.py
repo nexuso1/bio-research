@@ -30,6 +30,7 @@ parser.add_argument('--val_batch', type=int, help='Validation batch size', defau
 parser.add_argument('--clusters', type=str, help='Path to clusters', default='clusters_30.csv')
 parser.add_argument('--fine_tune', type=bool, help='Use fine tuning on the base model or not. Default is False', default=False)
 parser.add_argument('-o', type=str, help='Output folder', default='output')
+parser.add_argument('-n', type=str, help='Model name', default='prot_model.pt')
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
@@ -271,7 +272,7 @@ if __name__ == '__main__':
     tokenizer, model, history = main(args)
     now = datetime.now()
 
-    name = "fine_tuned_2048_1024_nodropout"
+    name = args.n
 
     if not os.path.exists(f'./{args.o}'):
         os.mkdir(f'./{args.o}')
