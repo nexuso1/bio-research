@@ -26,11 +26,17 @@ parser.add_argument('--lr', type=float, help='Learning rate', default=3e-4)
 parser.add_argument('-o', type=str, help='Output folder', default='output')
 parser.add_argument('-n', type=str, help='Model name', default='prot_model.pt')
 
+class Tokenizer(keras.layers.Layer):
+    def __init__(self, tokenizer):
+        super().__init__()
+        self.tokenizer = tokenizer
+
+    def call(self, inputs):
+        return self.tokenizer(inputs)
+    
 def create_model(args, bert, tokenizer):
     inputs = keras.Input(shape=(1,), batch_size=args.batch_size)
-
-    tokenizer_layer = keras.layers.TorchModuleWrapper(tokenizer, name='tokenizer')
-    tokenizer_layer = tokenizer(inputs)
+    tokenizer_layer = Tokenizer(tokenizer)(inputs)
     ids = tokenizer_layer['input_ids']
     type_ids = tokenizer_layer['type_ids']
     attention_mask = tokenizer_layer['attention_mask']
@@ -74,7 +80,7 @@ def main(args):
     # train_df, test_df = prepare_data(args)
     pbert, tokenizer = ts.get_bert_model()
     model = create_model(args, pbert, tokenizer)
-
+    build_model(args, model, 10000)
 if __name__ == '__main__':
     args = parser.parse_args()
     main(args)
