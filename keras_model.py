@@ -26,23 +26,34 @@ parser.add_argument('--lr', type=float, help='Learning rate', default=3e-4)
 parser.add_argument('-o', type=str, help='Output folder', default='output')
 parser.add_argument('-n', type=str, help='Model name', default='prot_model.pt')
 
-class Tokenizer(keras.layers.Layer):
-    def __init__(self, tokenizer):
-        super().__init__()
-        self.tokenizer = tokenizer
+class Dictionarizer(keras.layers.Layer):
+    def __init__(self, key_names):
+        super(Dictionarizer, self).__init__()
+        self.key_names = key_names
 
     def call(self, inputs):
-        return self.tokenizer(inputs)
+        if not isinstance(inputs, tuple):
+            raise ValueError("Input must be a tuple of tensors.")
+        if len(inputs) != len(self.key_names):
+            raise ValueError("Number of input tensors must match the number of key names.")
+        output_dict = {}
+        for i, key in enumerate(self.key_names):
+            output_dict[key] = inputs[i]
+        return output_dict
     
-def create_model(args, bert, tokenizer):
-    inputs = keras.Input(shape=(1,), batch_size=args.batch_size)
-    tokenizer_layer = Tokenizer(tokenizer)(inputs)
-    ids = tokenizer_layer['input_ids']
-    type_ids = tokenizer_layer['type_ids']
-    attention_mask = tokenizer_layer['attention_mask']
-    bert_layer = keras.layers.TorchModuleWrapper(bert)([ids, type_ids, attention_mask])
+    def get_config(self):
+        config = super(Dictionarizer, self).get_config()
+        config.update({"key_names": self.key_names})
+        return config
+    
+def create_model(args, bert):
+    ids = keras.Input(shape=(None, 1024), batch_size=args.batch_size)
+    type_ids = keras.Input(shape=(None, 1024), batch_size=args.batch_size)
+    attention_mask = keras.Input(shape=(None, 1024), batch_size=args.batch_size)
+    dicter = Dictionarizer(['input_ids', 'type_ids', 'attention_mask'])([ids, type_ids, attention_mask])
+    bert_layer = keras.layers.TorchModuleWrapper(bert)(dicter)
 
-    model = keras.Model(inputs, bert_layer)
+    model = keras.Model(inputs=[ids, type_ids, attention_mask], outputs=bert_layer)
     return model
 
 def build_model(args, model : keras.Model, data_length):
