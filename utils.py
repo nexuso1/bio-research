@@ -8,7 +8,7 @@ from datasets import Dataset
 def load_torch_model(path):
     import torch
 
-    with open(path, 'r') as f:
+    with open(path, 'rb') as f:
         model = torch.load(f)
 
     return model

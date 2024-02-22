@@ -1,4 +1,3 @@
-import torch
 import json
 import pandas as pd
 import numpy as np
@@ -11,12 +10,11 @@ from transformers import BertTokenizer
 from sklearn.metrics import f1_score, accuracy_score
 from itertools import chain
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
 parser = ArgumentParser()
 
-parser.add_argument('-i', type=str, help='Model path')
-parser.add_argument('-t', type=str, help='Test data path')
+parser.add_argument('-a', type=bool, help='Analyze mode. Analyze results from an existing result dataframe. The -i argument will then be the dataframe path.', default=False)
+parser.add_argument('-i', type=str, help='Model or dataframe path')
+parser.add_argument('-t', type=str, help='Test data path', default='./')
 parser.add_argument('--prots', type=str, help='Path to protein dataset, mapping IDs to sequences.', default='./phosphosite_sequences/phosphosite_df.json')
 parser.add_argument('-p', type=bool, help='Whether the test data are proteins or not', default=True)
 parser.add_argument('--max_length', type=int, help='Maximum length of protein sequence to consider (longer sequences will be filtered out of the test data. Default is 1024.', default=1024)
@@ -41,10 +39,60 @@ def save_preds(args, pred_df):
     pred_df.to_json(path)
     print(f'Results saved to {path}')
 
+def extract_labels_from_row(row, p):
+    idxs = [i for i in range(len(row['sequence'])) if row['sequence'][i] == p]
+    labels = [row['label'][i] for i in idxs]
+    preds = [row['predictions'][i] for i in idxs]
+    return labels, preds
+
+def analyze_preds(args, pred_df):
+    relevant_prots = ['T', 'S', 'Y', 'R']
+    non_canon_prots = ['H', 'C', 'B', 'D', 'N', 'K']
+    relevant_preds = [[] for p in relevant_prots]
+    relevant_labels = [[] for p in relevant_prots]
+    nc_preds = [[] for p in non_canon_prots]
+    nc_labels = [[] for p in non_canon_prots]
+
+    for key in pred_df.index:
+        row = pred_df.loc[key]
+        for i, p in enumerate(relevant_prots):
+            labels, preds = extract_labels_from_row(row, p)
+            relevant_labels[i].extend(labels)
+            relevant_preds[i].extend(preds)
+        
+        for i, p in enumerate(non_canon_prots):
+            labels, preds = extract_labels_from_row(row, p)
+            nc_labels[i].extend(labels)
+            nc_preds[i].extend(preds)
+
+    print('Usual phosphorylation AA results:')
+    for i, p in enumerate(relevant_prots):
+        acc = accuracy_score(relevant_labels[i], relevant_preds[i])
+        f1 = f1_score(relevant_labels[i], relevant_preds[i], average='macro')
+        print(f'AA with FASTA code {p}:')
+        print(f'\tAccuracy: {acc}')
+        print(f'\tF1: {f1}')
+
+    print('Non-canon phosphorylation AA results:')
+    for i, p in enumerate(non_canon_prots):
+        acc = accuracy_score(nc_labels[i], nc_preds[i])
+        f1 = f1_score(nc_labels[i], nc_preds[i], average='macro')
+        print(f'AA with FASTA code {p}:')
+        print(f'\tAccuracy: {acc}')
+        print(f'\tF1: {f1}')
+
 def flatten_list(lst):
     return list(chain(*lst))
 
 def main(args):
+    if args.a:
+        df = pd.read_json(args.i)
+        df['sequence'] = df['sequence'].apply(lambda row: ''.join(row.split()))
+        analyze_preds(args, df)
+        return
+
+    import torch
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = load_torch_model(args.i)
     tokenizer = BertTokenizer.from_pretrained("Rostlab/prot_bert", do_lower_case=False)
     protein_df = load_data(args.prots).set_index('id')
@@ -70,6 +118,7 @@ def main(args):
         # Save the predictions for later inspection
         test_df['probabilities'] = probs
         test_df['predictions'] = preds
+        test_df['sequence'] = protein_df.loc[test_df.index]['sequence'] # Return sequences to their original form
         save_preds(args, test_df)
 
         # Calculate metrics
@@ -81,6 +130,8 @@ def main(args):
         acc = accuracy_score(np_labels, np_preds)
         print(f'F1 score: {f1}')
         print(f'Accuracy: {acc}')
+
+        analyze_preds(args, test_df)
 
     else:
         print('Non-protein data not supported yet. Exiting.')
