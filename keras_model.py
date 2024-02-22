@@ -27,7 +27,7 @@ parser.add_argument('-o', type=str, help='Output folder', default='output')
 parser.add_argument('-n', type=str, help='Model name', default='prot_model.pt')
 
 def create_model(args, bert, tokenizer):
-    inputs = keras.Input(shape=(None), batch_size=args.batch_size)
+    inputs = keras.Input(shape=(1,), batch_size=args.batch_size)
 
     tokenizer_layer = keras.layers.TorchModuleWrapper(tokenizer, name='tokenizer')
     tokenizer_layer = tokenizer(inputs)
