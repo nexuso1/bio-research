@@ -100,6 +100,7 @@ class TokenClassifier(nn.Module):
 
         sequence_output = outputs[0]
         logits = self.classifier(sequence_output)
+        loss = None
 
         if labels is not None:
             loss_fct = CrossEntropyLoss()
@@ -177,12 +178,12 @@ def train_model(args, train_ds, test_ds, model, tokenizer,
 
     # Huggingface Trainer arguments
     args = TrainingArguments(
-        evaluation_strategy = "epoch",
+        evaluation_strategy = "no",
         logging_strategy = "epoch",
         save_strategy = "epoch",
         output_dir = f"/storage/praha1/home/nexuso1/bio-research/temp_output/{args.n}",
         learning_rate=lr,
-        warmup_ratio=0.05,
+        warmup_ratio=0.02,
         label_smoothing_factor=0.1,
         per_device_train_batch_size=batch,
         per_device_eval_batch_size=val_batch,
@@ -190,7 +191,6 @@ def train_model(args, train_ds, test_ds, model, tokenizer,
         num_train_epochs=epochs,
         seed = seed,
         remove_unused_columns=False,
-        eval_accumulation_steps=5
     )
 
     data_collator = DataCollatorForTokenClassification(tokenizer)
@@ -201,9 +201,8 @@ def train_model(args, train_ds, test_ds, model, tokenizer,
         args,
         train_dataset=train_ds,
         eval_dataset=test_ds,
-        tokenizer=tokenizer, 
+        tokenizer=tokenizer,
         data_collator=data_collator,
-        compute_metrics=compute_metrics
     )
 
     # Train model
