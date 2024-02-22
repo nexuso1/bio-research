@@ -57,6 +57,10 @@ def load_phospho_epsd(path : str):
 
     return res
 
+def remove_long_sequences(df, max_length):
+    mask = df['sequence'].apply(lambda x: len(x) < max_length)
+    return df[mask]
+
 class ProteinDataset(Dataset):
     def __init__(self,tokenizer, max_length,  
                  inputs : list = None,

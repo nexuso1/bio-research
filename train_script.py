@@ -5,7 +5,7 @@ import torch.nn as nn
 import random
 import numpy as np
 import argparse
-import re
+import evaluate
 import json
 import os
 
@@ -20,7 +20,7 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('--seed', type=int, help='Random seed', default=42)
 parser.add_argument('--batch_size', type=int, help='Batch size', default=1)
-parser.add_argument('--epochs', type=int, help='Number of training epochs', default=1)
+parser.add_argument('--epochs', type=int, help='Number of training epochs', default=10)
 parser.add_argument('--max_length', type=int, help='Maximum sequence length (shorter sequences will be pruned)', default=1024)
 parser.add_argument('--fasta', type=str, help='Path to the FASTA protein database', default='./phosphosite_sequences/Phosphosite_seq.fasta')
 parser.add_argument('--phospho', type=str, help='Path to the phoshporylarion dataset', default='./phosphosite_sequences/Phosphorylation_site_dataset')
@@ -140,9 +140,10 @@ def set_seeds(s):
     random.seed(s)
     set_seed(s)
 
-def compute_metrics(eval_pred, metric):
+def compute_metrics(eval_pred):
     preds, labels = eval_pred
-    return metric.compute(predictions = preds, references=labels)
+    f1 = evaluate.load('f1')
+    return f1.compute(predictions = preds, references=labels)
 
 def create_dataset(tokenizer, seqs, labels, max_length):
     tokenized = tokenizer(seqs, max_length=max_length, padding=False, truncation=True)
@@ -176,7 +177,7 @@ def train_model(args, train_ds, test_ds, model, tokenizer,
 
     # Huggingface Trainer arguments
     args = TrainingArguments(
-        evaluation_strategy = "no",
+        evaluation_strategy = "epoch",
         logging_strategy = "epoch",
         save_strategy = "epoch",
         output_dir = f"/storage/praha1/home/nexuso1/bio-research/temp_output/{args.n}",
@@ -189,7 +190,7 @@ def train_model(args, train_ds, test_ds, model, tokenizer,
         num_train_epochs=epochs,
         seed = seed,
         remove_unused_columns=False,
-        eval_accumulation_steps=2
+        eval_accumulation_steps=5
     )
 
     data_collator = DataCollatorForTokenClassification(tokenizer)
