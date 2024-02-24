@@ -13,6 +13,11 @@ def load_torch_model(path):
 
     return model
 
+def load_tf_model(path):
+    import tensorflow as tf
+    
+    return tf.keras.models.load_model(path)
+
 def load_clusters(path):
     return pd.read_csv(path, sep='\t', names=['cluster_rep', 'cluster_mem'])
 

@@ -2,9 +2,10 @@ import json
 import pandas as pd
 import numpy as np
 import os
+import baseline
 
 from argparse import ArgumentParser
-from utils import load_torch_model
+from utils import load_torch_model, load_tf_model
 from train_script import TokenClassifier, create_dataset, load_data
 from transformers import BertTokenizer
 from sklearn.metrics import f1_score, accuracy_score
@@ -84,6 +85,38 @@ def analyze_preds(args, pred_df):
 def flatten_list(lst):
     return list(chain(*lst))
 
+def prepare_prot_df(args, protein_df):
+    protein_ids = pd.read_json(args.t, typ='series', orient='records')
+    test_df = protein_df.loc[protein_ids]
+    test_df = remove_long_sequences(test_df, args.max_length)
+    test_df = preprocess_data(test_df)
+    
+def test_tf_model(args):
+    import baseline
+    import tensorflow as tf
+
+    model = load_tf_model(args.i)
+    data = baseline.load_data(args.t) # tfrec dataset
+    protein_df = load_data(args.prots).set_index('id') # protein dataset (dataframe)
+    test_data = prepare_prot_df(args, protein_df)
+
+    # Prepare test dataset
+    test = data.filter(lambda x: x['uniprot_id'].ref() in test_data.index)
+    test = test.batch(256).prefetch(tf.data.AUTOTUNE)
+
+    preds = []
+    for batch in test:
+        print(batch)
+        preds = model.predict(batch['embeddings'])
+        break
+
+def calculate_metrics(labels, preds):
+    # Calculate metrics
+    f1 = f1_score(labels, preds, average='macro')
+    acc = accuracy_score(labels, preds)
+    print(f'F1 score: {f1}')
+    print(f'Accuracy: {acc}')
+
 def main(args):
     if args.a:
         df = pd.read_json(args.i)
@@ -98,10 +131,7 @@ def main(args):
     protein_df = load_data(args.prots).set_index('id')
 
     if args.p:
-        protein_ids = pd.read_json(args.t, typ='series', orient='records')
-        test_df = protein_df.loc[protein_ids]
-        test_df = remove_long_sequences(test_df, args.max_length)
-        test_df = preprocess_data(test_df)
+        test_df = prepare_prot_df(args, protein_df)
         preds = []
         probs = []
         with torch.no_grad():
@@ -120,17 +150,11 @@ def main(args):
         test_df['predictions'] = preds
         test_df['sequence'] = protein_df.loc[test_df.index]['sequence'] # Return sequences to their original form
         save_preds(args, test_df)
+        
+        # Calculate relevant metrics
+        calculate_metrics(flatten_list(test_df['label'].to_numpy()), flatten_list(preds))
 
-        # Calculate metrics
-        np_labels = flatten_list(test_df['label'].to_numpy())
-        np_preds = flatten_list(preds)
-        print(len(np_labels) == len(np_preds))
-        print(np_preds)
-        f1 = f1_score(np_labels, np_preds, average='macro')
-        acc = accuracy_score(np_labels, np_preds)
-        print(f'F1 score: {f1}')
-        print(f'Accuracy: {acc}')
-
+        # Analyze performance on relevant AAs
         analyze_preds(args, test_df)
 
     else:
