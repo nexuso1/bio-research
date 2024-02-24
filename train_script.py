@@ -103,7 +103,7 @@ class TokenClassifier(nn.Module):
         loss = None
 
         if labels is not None:
-            loss_fct = CrossEntropyLoss()
+            loss_fct = CrossEntropyLoss(label_smoothing=0.1)
             # Only keep active parts of the loss
             if attention_mask is not None:
                 active_loss = attention_mask.view(-1) == 1
@@ -184,7 +184,6 @@ def train_model(args, train_ds, test_ds, model, tokenizer,
         output_dir = f"/storage/praha1/home/nexuso1/bio-research/temp_output/{args.n}",
         learning_rate=lr,
         warmup_ratio=0.02,
-        label_smoothing_factor=0.1,
         per_device_train_batch_size=batch,
         per_device_eval_batch_size=val_batch,
         gradient_accumulation_steps=accum,

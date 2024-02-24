@@ -32,8 +32,6 @@ class Dictionarizer(keras.layers.Layer):
         self.key_names = key_names
 
     def call(self, inputs):
-        if not isinstance(inputs, tuple):
-            raise ValueError("Input must be a tuple of tensors.")
         if len(inputs) != len(self.key_names):
             raise ValueError("Number of input tensors must match the number of key names.")
         output_dict = {}
@@ -50,8 +48,8 @@ def create_model(args, bert):
     ids = keras.Input(shape=(None, 1024), batch_size=args.batch_size)
     type_ids = keras.Input(shape=(None, 1024), batch_size=args.batch_size)
     attention_mask = keras.Input(shape=(None, 1024), batch_size=args.batch_size)
-    dicter = Dictionarizer(['input_ids', 'type_ids', 'attention_mask'])([ids, type_ids, attention_mask])
-    bert_layer = keras.layers.TorchModuleWrapper(bert)(dicter)
+    #dicter = Dictionarizer(['input_ids', 'type_ids', 'attention_mask'])([ids, type_ids, attention_mask])
+    bert_layer = keras.layers.TorchModuleWrapper(bert)(input_ids=ids, token_type_ids=type_ids, attention_mask=attention_mask)
 
     model = keras.Model(inputs=[ids, type_ids, attention_mask], outputs=bert_layer)
     return model
@@ -90,7 +88,7 @@ def prepare_data(args):
 def main(args):
     # train_df, test_df = prepare_data(args)
     pbert, tokenizer = ts.get_bert_model()
-    model = create_model(args, pbert, tokenizer)
+    model = create_model(args, pbert)
     build_model(args, model, 10000)
 if __name__ == '__main__':
     args = parser.parse_args()
