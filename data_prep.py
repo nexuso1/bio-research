@@ -41,7 +41,8 @@ def create_examples_residue(id, embed, sites):
         feature = {
         "uniprot_id" : bytes_feature(id.encode('utf-8')),
         "embeddings": float_feature(e),
-        "sites" : int32_feature([int(sites[i])])
+        "target" : int32_feature([int(sites[i])]),
+        "position" : int32_feature([i])
         }
         res.append(tf.train.Example(features=tf.train.Features(feature=feature)))
     return res
