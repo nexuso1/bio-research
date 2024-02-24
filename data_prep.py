@@ -82,12 +82,14 @@ def extract_pos_info(dataset : pd.DataFrame):
 
 def prep_data(args, phospho_data_pos):
     buffer = []
+    data_length = 0
     buff_max_size = 150000
     idx = 0
     for prot in glob.glob(f'{args.e}/*.npy'):
         if len(buffer) >= buff_max_size:
             serialize_data(args, buffer, idx)
             idx += 1
+            data_length += len(buffer)
             buffer = []
     
         seq_id = prot.split('_')[-1][:-4] # Shave off .npy
@@ -116,6 +118,11 @@ def prep_data(args, phospho_data_pos):
 
     if len(buffer) > 0:
         serialize_data(args, buffer, idx)
+        data_length += len(buffer)
+    print('Number of training examples: ', data_length)
+    with open(f'{args.o}/n_elements.txt', 'w') as f:
+        text = str(data_length)
+        f.write(text)
 
 def main(args):
     phospho_data = pd.read_csv(args.p, sep='\t', skiprows=3)
