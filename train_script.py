@@ -10,7 +10,7 @@ import json
 import os
 
 from datetime import datetime
-from utils import remove_long_sequences
+from utils import remove_long_sequences, load_prot_data
 from datasets import Dataset
 from torch.nn import CrossEntropyLoss
 from sklearn.model_selection import train_test_split
@@ -38,17 +38,7 @@ parser.add_argument('-n', type=str, help='Model name', default='prot_model.pt')
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
-def load_data(dataset_path):
-    df = pd.read_json(dataset_path)
-    df = df.dropna()
-    df['sites'] = df['sites'].apply(lambda x: [eval(i) - 1 for i in x])
-    labels = [np.zeros(shape=len(s)) for s in df['sequence']]
-    for i, l in enumerate(labels):
-        l[df.iloc[i]['sites']] = 1
 
-    df['label'] = labels
-    
-    return df[['id', 'sequence', 'label']]
 
 class TokenClassifier(nn.Module):
     """
@@ -239,7 +229,7 @@ def save_as_string(obj, path):
 def main(args):
     pbert, tokenizer = get_bert_model()
     if not args.pretokenized:
-        data = load_data(args.dataset_path)
+        data = load_prot_data(args.dataset_path)
         data = remove_long_sequences(data, args.max_length)
         prepped_data = preprocess_data(data)
         clusters = load_clusters(args.clusters)

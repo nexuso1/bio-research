@@ -69,7 +69,7 @@ def build_model(args, model : keras.Model, data_length):
     return model
 
 def prepare_data(args):
-    data = ts.load_data(args.dataset_path)
+    data = ts.load_prot_data(args.dataset_path)
     data = ts.remove_long_sequences(data, args.max_length)
     prepped_data = ts.preprocess_data(data)
     clusters = ts.load_clusters(args.clusters)

@@ -6,7 +6,7 @@ import baseline
 
 from argparse import ArgumentParser
 from utils import load_torch_model, load_tf_model
-from train_script import TokenClassifier, create_dataset, load_data
+from utils import load_prot_data
 from transformers import BertTokenizer
 from sklearn.metrics import f1_score, accuracy_score
 from itertools import chain
@@ -98,7 +98,7 @@ def test_tf_model(args):
 
     model = load_tf_model(args.i)
     data = baseline.load_data(args.t) # tfrec dataset
-    protein_df = load_data(args.prots).set_index('id') # protein dataset (dataframe)
+    protein_df = load_prot_data(args.prots).set_index('id') # protein dataset (dataframe)
     test_data = prepare_prot_df(args, protein_df)
 
     # Prepare test dataset
@@ -111,8 +111,10 @@ def test_tf_model(args):
         preds = model.predict(batch['embeddings'])
         pred_dict[batch['uniprot_id']][batch['position']] = preds.numpy()
         
-        break
-
+    pred_df = pd.DataFrame.from_dict(pred_dict, orient='index', columns=['predictions'])
+    test_df = test_data.join(pred_df)
+    analyze_preds(args, test_df)
+    
 def calculate_metrics(labels, preds):
     # Calculate metrics
     f1 = f1_score(labels, preds, average='macro')
@@ -135,7 +137,7 @@ def main(args):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = load_torch_model(args.i)
     tokenizer = BertTokenizer.from_pretrained("Rostlab/prot_bert", do_lower_case=False)
-    protein_df = load_data(args.prots).set_index('id')
+    protein_df = load_prot_data(args.prots).set_index('id')
 
     if args.p:
         test_df = prepare_prot_df(args, protein_df)

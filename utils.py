@@ -13,6 +13,18 @@ def load_torch_model(path):
 
     return model
 
+def load_prot_data(dataset_path):
+    df = pd.read_json(dataset_path)
+    df = df.dropna()
+    df['sites'] = df['sites'].apply(lambda x: [eval(i) - 1 for i in x])
+    labels = [np.zeros(shape=len(s)) for s in df['sequence']]
+    for i, l in enumerate(labels):
+        l[df.iloc[i]['sites']] = 1
+
+    df['label'] = labels
+    
+    return df[['id', 'sequence', 'label']]
+
 def load_tf_model(path):
     import tensorflow as tf
     
