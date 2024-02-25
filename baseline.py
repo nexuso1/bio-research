@@ -52,9 +52,9 @@ def decode_fn(record_bytes):
       {
           "uniprot_id" : tf.io.FixedLenFeature((1,), dtype=tf.string),
           "embeddings": tf.io.FixedLenFeature((1024,), dtype=tf.float32),
-          "sites": tf.io.FixedLenFeature((1,), dtype=tf.int64), }
+          "target": tf.io.FixedLenFeature((1,), dtype=tf.int64),
+          "position": tf.io.FixedLenFeature((1,), dtype=tf.int64) }
   )
-
 
 def load_data(path, tfrec=True):
     if tfrec:

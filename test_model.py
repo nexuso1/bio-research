@@ -19,6 +19,7 @@ parser.add_argument('-t', type=str, help='Test data path', default='./')
 parser.add_argument('--prots', type=str, help='Path to protein dataset, mapping IDs to sequences.', default='./phosphosite_sequences/phosphosite_df.json')
 parser.add_argument('-p', type=bool, help='Whether the test data are proteins or not', default=True)
 parser.add_argument('--max_length', type=int, help='Maximum length of protein sequence to consider (longer sequences will be filtered out of the test data. Default is 1024.', default=1024)
+parser.add_argument('--mode', type=str, help='Test mode. Either "pt" for Pytorch models, or "tf" for tensorflow models.', default='tf')
 
 def preprocess_data(df : pd.DataFrame):
     """
@@ -104,10 +105,12 @@ def test_tf_model(args):
     test = data.filter(lambda x: x['uniprot_id'].ref() in test_data.index)
     test = test.batch(256).prefetch(tf.data.AUTOTUNE)
 
-    preds = []
+    pred_dict = {id : np.zeros(shape=(len(test_data['sequence'][id]))) for id in test_data.index}
     for batch in test:
-        print(batch)
+        print(batch) 
         preds = model.predict(batch['embeddings'])
+        pred_dict[batch['uniprot_id']][batch['position']] = preds.numpy()
+        
         break
 
 def calculate_metrics(labels, preds):
@@ -122,6 +125,10 @@ def main(args):
         df = pd.read_json(args.i)
         df['sequence'] = df['sequence'].apply(lambda row: ''.join(row.split()))
         analyze_preds(args, df)
+        return
+
+    if args.mode == 'tf':
+        test_tf_model(args)
         return
 
     import torch
