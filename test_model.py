@@ -97,14 +97,13 @@ def test_tf_model(args):
     import tensorflow as tf
 
     model = load_tf_model(args.i)
-    paths = glob.glob(f'{args.i}/*.tfrec')
+    paths = glob.glob(f'{args.t}/*.tfrec')
     data = baseline.load_data(paths) # tfrec dataset
     protein_df = load_prot_data(args.prots).set_index('id') # protein dataset (dataframe)
 
     # Prepare test dataset
     test = data.filter(lambda x: x['uniprot_id'].ref() in protein_df.index)
     test = test.batch(256)
-    print(test)
     pred_dict = {id : {'predictions' : np.zeros(shape=(len(protein_df['sequence'][id])))} for id in protein_df.index}
     for batch in test:
         print('here')
@@ -115,8 +114,8 @@ def test_tf_model(args):
          
     pred_df = pd.DataFrame.from_dict(pred_dict, orient='index')
     test_df = protein_df.join(pred_df)
+    print(test_df.head(10))
     analyze_preds(args, test_df)
-    
 def calculate_metrics(labels, preds):
     # Calculate metrics
     f1 = f1_score(labels, preds, average='macro')
