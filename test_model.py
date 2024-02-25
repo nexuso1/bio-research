@@ -2,7 +2,7 @@ import json
 import pandas as pd
 import numpy as np
 import os
-import baseline
+import glob
 
 from argparse import ArgumentParser
 from utils import load_torch_model, load_tf_model
@@ -97,22 +97,24 @@ def test_tf_model(args):
     import tensorflow as tf
 
     model = load_tf_model(args.i)
-    data = baseline.load_data(args.t) # tfrec dataset
+    paths = glob.glob(f'{args.i}/*.tfrec')
+    data = baseline.load_data(paths) # tfrec dataset
     protein_df = load_prot_data(args.prots).set_index('id') # protein dataset (dataframe)
-    test_data = prepare_prot_df(args, protein_df)
 
     # Prepare test dataset
-    test = data.filter(lambda x: x['uniprot_id'].ref() in test_data.index)
-    test = test.batch(256).prefetch(tf.data.AUTOTUNE)
-
-    pred_dict = {id : np.zeros(shape=(len(test_data['sequence'][id]))) for id in test_data.index}
+    test = data.filter(lambda x: x['uniprot_id'].ref() in protein_df.index)
+    test = test.batch(256)
+    print(test)
+    pred_dict = {id : {'predictions' : np.zeros(shape=(len(protein_df['sequence'][id])))} for id in protein_df.index}
     for batch in test:
-        print(batch) 
+        print('here')
+        print(batch)
         preds = model.predict(batch['embeddings'])
-        pred_dict[batch['uniprot_id']][batch['position']] = preds.numpy()
-        
-    pred_df = pd.DataFrame.from_dict(pred_dict, orient='index', columns=['predictions'])
-    test_df = test_data.join(pred_df)
+        for id in batch['uniprot_id']:
+            pred_dict[id]['predictions'][batch['position']] = preds.numpy()
+         
+    pred_df = pd.DataFrame.from_dict(pred_dict, orient='index')
+    test_df = protein_df.join(pred_df)
     analyze_preds(args, test_df)
     
 def calculate_metrics(labels, preds):
