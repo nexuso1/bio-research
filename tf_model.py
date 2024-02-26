@@ -23,11 +23,11 @@ parser.add_argument('-o', help='Output folder', type=str, default='./stratified'
 def create_model(args, input_shape):
     model = tf.keras.Sequential([
         tf.keras.layers.Input(input_shape, name='input'),
-        tf.keras.layers.Dense(4096),
+        tf.keras.layers.Dense(2048),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.ReLU(),
         tf.keras.layers.Dropout(0.2),
-        tf.keras.layers.Dense(2048),
+        tf.keras.layers.Dense(1024),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.ReLU(),
         tf.keras.layers.Dense(2, activation='softmax')
