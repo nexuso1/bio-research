@@ -68,8 +68,10 @@ def prep_data(args, phospho_data_pos, clusters):
     
     # Save train and test protein ids separately in a file
     save_as_string(list(train_prots), f'{args.o}/train_prots.json')
+    print(f'Train prots saved to {args.o}/train_prots.json')
     save_as_string(list(test_prots), f'{args.o}/test_prots.json')
-
+    print(f'Test prots saved to {args.o}/test_prots.json')
+    
     # Counters for number of examples in each dataset
     n_test = 0
     n_train = 0
