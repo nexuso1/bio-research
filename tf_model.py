@@ -14,7 +14,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--batch_size', type=int, help='Batch size for training', default=30)
 parser.add_argument('--epochs', type=int, help='Epochs to train', default=20)
 parser.add_argument('--seed', type=int, help='Random seed', default=42)
-parser.add_argument('-i', type=str, help='Input path', default='./tfrec_data_residues')
+parser.add_argument('-i', type=str, help='Train data folder', default='./split_tfrec_data/train')
+parser.add_argument('-t', type=str, help='Test data folder', default='/split_tfrec_data/test')
+parser.add_argument('-n', type=str, help='Model name (without the file extension)', default='tf_model')
 parser.add_argument('-c', type=str, help='Cluster information file path (.tsv format)', default='./cluster30.tsv')
 parser.add_argument('-o', help='Output folder', type=str, default='./stratified')
 
@@ -99,13 +101,10 @@ def train_model(args, model : tf.keras.Model, train_data : tf.data.Dataset, test
 
     return model
 def save_model(args, model : tf.keras.Model):
-    now = datetime.now()
-
-    name = now.strftime("stratified_%Y-%M-%d_%H:%M:%S")
-    model.save(os.path.join(args.o, name), save_format='h5')
+    model.save(os.path.join(args.o, f'{args.n}.h5'), save_format='h5')
 
 def example_prep_fn(example):
-    return example['embeddings'], tf.one_hot(example['sites'][0], depth=2)
+    return example['embeddings'], tf.one_hot(example['target'][0], depth=2)
 
 def prep_data_tfrec(data : tf.data.Dataset):
     return data.interleave(example_prep_fn, cycle_length=tf.data.AUTOTUNE).shuffle(buffer_size=1000, seed=42)
@@ -118,20 +117,23 @@ def main(args):
     tf.random.set_seed(args.seed)
     np.random.seed(args.seed)
 
-    # Load data from .npy array
-    paths = glob.glob(f'{args.i}/*.tfrec')
-    data = load_data(paths)
+    # Load tfrec data from the given folders
+    paths = glob.glob(f'{args.i}/*.tfrec') # train paths
+    train_data = load_data(paths)
+    paths = glob.glob(f'{args.t}/*.tfrec') # test paths
+    test_data = load_data(paths)
 
+    # Load the data length information
     data_length = get_length(args.i)
 
     # Create the baseline model
-    model = create_model(args, data.element_spec['embeddings'].shape)
+    model = create_model(args, train_data.element_spec['embeddings'].shape)
     
     # Compile the model with an optimizer and a learning schedule
     build_model(args, model, data_length=data_length)
 
-    # Train the model using 5-fold CV
-    model = train_model(args, model, data, data_length)
+    # Train the model
+    model = train_model(args, model, train_data, test_data)
 
     # Save the model as .h5
     save_model(args, model)
