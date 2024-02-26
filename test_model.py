@@ -5,11 +5,10 @@ import os
 import glob
 
 from argparse import ArgumentParser
-from utils import load_torch_model, load_tf_model
+from utils import load_torch_model, load_tf_model, flatten_list, preprocess_data, remove_long_sequences
 from utils import load_prot_data
 from transformers import BertTokenizer
 from sklearn.metrics import f1_score, accuracy_score
-from itertools import chain
 
 parser = ArgumentParser()
 
@@ -20,18 +19,6 @@ parser.add_argument('--prots', type=str, help='Path to protein dataset, mapping 
 parser.add_argument('-p', type=bool, help='Whether the test data are proteins or not', default=True)
 parser.add_argument('--max_length', type=int, help='Maximum length of protein sequence to consider (longer sequences will be filtered out of the test data. Default is 1024.', default=1024)
 parser.add_argument('--mode', type=str, help='Test mode. Either "pt" for Pytorch models, or "tf" for tensorflow models.', default='tf')
-
-def preprocess_data(df : pd.DataFrame):
-    """
-    Preprocessing for Pbert/ProtT5
-    """
-    df['sequence'] = df['sequence'].str.replace('|'.join(["O","B","U","Z"]),"X",regex=True)
-    df['sequence'] = df.apply(lambda row : " ".join(row["sequence"]), axis = 1)
-    return df
-
-def remove_long_sequences(df, max_length):
-    mask = df['sequence'].apply(lambda x: len(x) < max_length)
-    return df[mask]
 
 def save_preds(args, pred_df):
     model_name = os.path.basename(args.i)
@@ -83,9 +70,6 @@ def analyze_preds(args, pred_df):
         print(f'\tAccuracy: {acc}')
         print(f'\tF1: {f1}')
 
-def flatten_list(lst):
-    return list(chain(*lst))
-
 def prepare_prot_df(args, protein_df):
     protein_ids = pd.read_json(args.t, typ='series', orient='records')
     test_df = protein_df.loc[protein_ids]
@@ -116,6 +100,7 @@ def test_tf_model(args):
     test_df = protein_df.join(pred_df)
     print(test_df.head(10))
     analyze_preds(args, test_df)
+
 def calculate_metrics(labels, preds):
     # Calculate metrics
     f1 = f1_score(labels, preds, average='macro')

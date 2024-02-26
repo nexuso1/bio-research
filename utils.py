@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import re
 
+from itertools import chain
 from Bio import SeqIO
 from datasets import Dataset
 
@@ -12,6 +13,21 @@ def load_torch_model(path):
         model = torch.load(f)
 
     return model
+
+def flatten_list(lst):
+    return list(chain(*lst))
+
+def remove_long_sequences(df, max_length):
+    mask = df['sequence'].apply(lambda x: len(x) < max_length)
+    return df[mask]
+
+def preprocess_data(df : pd.DataFrame):
+    """
+    Preprocessing for Pbert/ProtT5
+    """
+    df['sequence'] = df['sequence'].str.replace('|'.join(["O","B","U","Z"]),"X",regex=True)
+    df['sequence'] = df.apply(lambda row : " ".join(row["sequence"]), axis = 1)
+    return df
 
 def load_prot_data(dataset_path):
     df = pd.read_json(dataset_path)
