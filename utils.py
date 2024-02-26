@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 import re
+import os
+import json
 
 from itertools import chain
 from Bio import SeqIO
@@ -40,6 +42,17 @@ def load_prot_data(dataset_path):
     df['label'] = labels
     
     return df[['id', 'sequence', 'label']]
+
+def save_as_string(obj, path):
+    """
+    Saves the given object as a JSON string.
+    """
+    dirname = os.path.dirname(path)
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+
+    with open(path, 'w') as f:
+        json.dump(obj, f)
 
 def load_tf_model(path):
     import tensorflow as tf
