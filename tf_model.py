@@ -6,6 +6,7 @@ import pandas as pd
 import argparse
 import os
 import glob
+import ast
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--batch_size', type=int, help='Batch size for training', default=30)
@@ -15,26 +16,29 @@ parser.add_argument('-i', type=str, help='Train data folder', default='./split_t
 parser.add_argument('-t', type=str, help='Test data folder', default='/split_tfrec_data/test')
 parser.add_argument('-n', type=str, help='Model name (without the file extension)', default='focal_tf_model')
 parser.add_argument('-o', help='Output folder', type=str, default='/storage/praha1/home/nexuso1/stratified')
+parser.add_argument('--layers', type=str, help='Sequential classifier layers shape.', default='[2048,2048,1024]')
 
 def create_model(args, input_shape):
-    model = tf.keras.Sequential([
-        tf.keras.layers.Input(input_shape, name='input'),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.Dense(2048),
-        tf.keras.layers.ReLU(),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.Dropout(0.2),
-        tf.keras.layers.Dense(1024),
-        tf.keras.layers.ReLU(),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.Dense(2, activation='softmax')
-    ])
+    inputs = tf.keras.layers.Input(input_shape, name='input')
+    last = inputs
+    for layer in args.layers:
+        if isinstance(layer, str):
+            units = eval(layer)
+        else:
+            units = int(layer)
 
+        last = tf.keras.layers.BatchNormalization()(last)
+        last = tf.keras.layers.Dense(units, activation='relu')(last)
+        last = tf.keras.layers.Dropout(0.2)(last)
+
+    bn = tf.keras.layers.BatchNormalization()(last)
+    outputs = tf.keras.layers.Dense(2, activation='softmax')(bn)
+    model = tf.keras.Model(inputs=inputs, outputs=outputs)
     model.summary()
     return model
 
 def build_model(args, model : tf.keras.Model, data_length):
-    schedule = tf.keras.optimizers.schedules.CosineDecay(0.001, warmup_steps=100, decay_steps=(data_length // args.batch_size) * args.epochs)
+    schedule = tf.keras.optimizers.schedules.CosineDecay(0.001, warmup_steps=100, alpha=0.01, decay_steps=(data_length // args.batch_size) * args.epochs)
     optim = tf.keras.optimizers.AdamW(learning_rate=schedule)
     metrics = [
         tf.keras.metrics.CategoricalAccuracy(),
@@ -92,7 +96,7 @@ def get_train_test_prots(clusters, train_clusters, test_clusters):
 
 def train_model(args, model : tf.keras.Model, train_data : tf.data.Dataset, test_data : tf.data.Dataset):
     model.fit(train_data,  epochs=args.epochs, use_multiprocessing=True, workers=-1, 
-                batch_size=args.batch_size, validation_data=test_data, validation_freq=10)
+                batch_size=args.batch_size, validation_data=test_data)
     loss, acc, f1 = model.evaluate(test_data, workers=-1, use_multiprocessing=True, batch_size=args.batch_size)
     print(f'Training finished with acc: {acc}, f1: {f1}')
 
@@ -103,9 +107,6 @@ def save_model(args, model : tf.keras.Model):
 
 def example_prep_fn(example):
     return example['embeddings'], tf.one_hot(example['target'][0], depth=2)
-
-def prep_data_tfrec(data : tf.data.Dataset):
-    return data.interleave(example_prep_fn, cycle_length=tf.data.AUTOTUNE).shuffle(buffer_size=1000, seed=42)
 
 def load_clusters(path):
     return pd.read_csv(path, sep='\t', names=['cluster_rep', 'cluster_mem'])
@@ -145,4 +146,5 @@ def main(args):
 
 if __name__ == '__main__':
     args = parser.parse_args()
+    args.layers = ast.literal_eval(args.layers)
     main(args)
