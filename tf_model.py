@@ -111,7 +111,7 @@ def load_clusters(path):
     return pd.read_csv(path, sep='\t', names=['cluster_rep', 'cluster_mem'])
 
 def prepare_dataset(data : tf.data.Dataset):
-    return data.map(example_prep_fn).batch(args.batch_size).prefetch(tf.data.AUTOTUNE).shuffle(100000, seed=42)
+    return data.map(example_prep_fn).batch(args.batch_size).prefetch(tf.data.AUTOTUNE).shuffle(1200, seed=42)
 
 def main(args):
     # Set random seed
