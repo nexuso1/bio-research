@@ -5,9 +5,6 @@ import numpy as np
 import pandas as pd
 import argparse
 import os
-from datetime import datetime
-from sklearn.model_selection import  StratifiedKFold
-import math
 import glob
 
 parser = argparse.ArgumentParser()
@@ -16,9 +13,8 @@ parser.add_argument('--epochs', type=int, help='Epochs to train', default=20)
 parser.add_argument('--seed', type=int, help='Random seed', default=42)
 parser.add_argument('-i', type=str, help='Train data folder', default='./split_tfrec_data/train')
 parser.add_argument('-t', type=str, help='Test data folder', default='/split_tfrec_data/test')
-parser.add_argument('-n', type=str, help='Model name (without the file extension)', default='tf_model')
-parser.add_argument('-c', type=str, help='Cluster information file path (.tsv format)', default='./cluster30.tsv')
-parser.add_argument('-o', help='Output folder', type=str, default='./stratified')
+parser.add_argument('-n', type=str, help='Model name (without the file extension)', default='focal_tf_model')
+parser.add_argument('-o', help='Output folder', type=str, default='/storage/praha1/home/nexuso1/stratified')
 
 def create_model(args, input_shape):
     model = tf.keras.Sequential([
@@ -45,7 +41,7 @@ def build_model(args, model : tf.keras.Model, data_length):
     ]
 
     model.compile(optimizer=optim,
-                   loss=tf.keras.losses.BinaryCrossentropy(label_smoothing=0.1),
+                   loss=tf.keras.losses.BinaryFocalCrossentropy(label_smoothing=0.1),
                    metrics=metrics)
     
     return model
@@ -95,11 +91,12 @@ def get_train_test_prots(clusters, train_clusters, test_clusters):
 
 def train_model(args, model : tf.keras.Model, train_data : tf.data.Dataset, test_data : tf.data.Dataset):
     model.fit(train_data,  epochs=args.epochs, use_multiprocessing=True, workers=-1, 
-                validation_split=0.2)
-    loss, acc, f1 = model.evaluate(test_data, workers=-1, use_multiprocessing=True)
+                batch_size=args.batch_size, validation_data=test_data, validation_freq=10)
+    loss, acc, f1 = model.evaluate(test_data, workers=-1, use_multiprocessing=True, batch_size=args.batch_size)
     print(f'Training finished with acc: {acc}, f1: {f1}')
 
     return model
+
 def save_model(args, model : tf.keras.Model):
     model.save(os.path.join(args.o, f'{args.n}.h5'), save_format='h5')
 
@@ -111,6 +108,9 @@ def prep_data_tfrec(data : tf.data.Dataset):
 
 def load_clusters(path):
     return pd.read_csv(path, sep='\t', names=['cluster_rep', 'cluster_mem'])
+
+def prepare_dataset(data : tf.data.Dataset):
+    return data.map(example_prep_fn).batch(args.batch_size).prefetch(tf.data.AUTOTUNE)
 
 def main(args):
     # Set random seed
@@ -128,6 +128,10 @@ def main(args):
 
     # Create the baseline model
     model = create_model(args, train_data.element_spec['embeddings'].shape)
+
+    # Prepare data
+    train_data = prepare_dataset(train_data)
+    test_data = prepare_dataset(test_data)
     
     # Compile the model with an optimizer and a learning schedule
     build_model(args, model, data_length=data_length)
