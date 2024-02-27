@@ -41,7 +41,7 @@ def build_model(args, model : tf.keras.Model, data_length):
     ]
 
     model.compile(optimizer=optim,
-                   loss=tf.keras.losses.BinaryFocalCrossentropy(label_smoothing=0.1),
+                   loss=tf.keras.losses.BinaryFocalCrossentropy(label_smoothing=0.1, apply_class_balancing=True),
                    metrics=metrics)
     
     return model
