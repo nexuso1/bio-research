@@ -26,7 +26,7 @@ def create_model(args, input_shape):
         tf.keras.layers.Dense(1024),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.ReLU(),
-        tf.keras.layers.Dense(2, activation='softmax')
+        tf.keras.layers.Dense(1, activation='sigmoid')
     ])
 
     model.summary()
@@ -101,7 +101,7 @@ def save_model(args, model : tf.keras.Model):
     model.save(os.path.join(args.o, f'{args.n}.h5'), save_format='h5')
 
 def example_prep_fn(example):
-    return example['embeddings'], tf.one_hot(example['target'][0], depth=2)
+    return example['embeddings'], example['target'][0]
 
 def prep_data_tfrec(data : tf.data.Dataset):
     return data.interleave(example_prep_fn, cycle_length=tf.data.AUTOTUNE).shuffle(buffer_size=1000, seed=42)
