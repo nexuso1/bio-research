@@ -15,7 +15,7 @@ parser.add_argument('--seed', type=int, help='Random seed', default=42)
 parser.add_argument('-i', type=str, help='Train data folder', default='./split_tfrec_data/train')
 parser.add_argument('-t', type=str, help='Test data folder', default='/split_tfrec_data/test')
 parser.add_argument('-n', type=str, help='Model name (without the file extension)', default='focal_tf_model')
-parser.add_argument('-o', help='Output folder', type=str, default='/storage/praha1/home/nexuso1/stratified')
+parser.add_argument('-o', help='Output folder', type=str, default='/storage/praha1/home/nexuso1/models')
 parser.add_argument('--layers', type=str, help='Sequential classifier layers shape.', default='[2048,2048,1024]')
 
 def create_model(args, input_shape):
