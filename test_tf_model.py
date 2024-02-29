@@ -8,7 +8,7 @@ import tensorflow as tf
 from argparse import ArgumentParser
 from utils import load_tf_model
 from utils import load_prot_data
-from test_model import analyze_preds, calculate_metrics, flatten_list
+from test_model import analyze_preds, calculate_metrics, flatten_list, save_preds
 
 parser = ArgumentParser()
 
@@ -40,6 +40,9 @@ def test_tf_model(args):
     print(test_df.head(10))
     analyze_preds(args, test_df)
     calculate_metrics(pred_df['target'], pred_df['target'])
+
+    # Save predictions
+    save_preds(args, pred_df)
 
 def create_eval_model(base_model):
     embeds = tf.keras.Input(shape=(1024,), name='embeddings')
