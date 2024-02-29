@@ -16,7 +16,6 @@ parser.add_argument('-i', type=str, help='Train data folder', default='./split_t
 parser.add_argument('-t', type=str, help='Test data folder', default='/split_tfrec_data/test')
 parser.add_argument('-n', type=str, help='Model name (without the file extension)', default='focal_tf_model')
 parser.add_argument('-o', help='Output folder', type=str, default='/storage/praha1/home/nexuso1/models')
-parser.add_argument('-o', help='Output folder', type=str, default='/storage/praha1/home/nexuso1/stratified')
 parser.add_argument('--lr', help='Initial learning rate', type=float, default=0.001)
 parser.add_argument('--alpha', help='Fraction of initial learning rate to be used as a floor in the cosine decay', type=float, default=0.01)
 parser.add_argument('--layers', type=str, help='Sequential classifier layers shape.', default='[2048,2048,1024]')
