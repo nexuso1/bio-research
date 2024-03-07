@@ -179,7 +179,6 @@ def train_model(args, train_ds, test_ds, model, tokenizer,
         remove_unused_columns=True,
         eval_accumulation_steps=10,
         weight_decay=0.001,
-        compute_metrics=compute_metrics
     )
 
     data_collator = DataCollatorForTokenClassification(tokenizer)
@@ -192,6 +191,7 @@ def train_model(args, train_ds, test_ds, model, tokenizer,
         eval_dataset=test_ds,
         tokenizer=tokenizer,
         data_collator=data_collator,
+        compute_metrics=compute_metrics
     )
 
     # Train model
