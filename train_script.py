@@ -132,7 +132,7 @@ def set_seeds(s):
 def compute_metrics(eval_pred):
     preds, labels = eval_pred
     f1 = evaluate.load('f1')
-    return f1.compute(predictions = preds, references=labels)
+    return f1.compute(predictions = preds, references=labels, labels=[0, 1])
 
 def create_dataset(tokenizer, seqs, labels, max_length):
     tokenized = tokenizer(seqs, max_length=max_length, padding=False, truncation=True)
@@ -184,7 +184,9 @@ def train_model(args, train_ds, test_ds, model, tokenizer,
     )
 
     data_collator = DataCollatorForTokenClassification(tokenizer)
-    
+    for b in train_ds.iter(batch_size=2):
+        data_collator.torch_call(b)
+        break   
     # Trainer
     trainer = Trainer(
         model,
