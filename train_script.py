@@ -27,7 +27,7 @@ parser.add_argument('--phospho', type=str, help='Path to the phoshporylarion dat
 parser.add_argument('--dataset_path', type=str, help='Path to the protein dataset. Expects a dataframe with columns ("id", "sequence", "sites"). "sequence" is the protein AA string, "sites" is a list of phosphorylation sites.', default='./phosphosite_sequences/phosphosite_df.json')
 parser.add_argument('--pretokenized', type=bool, help='Input dataset is already pretokenized', default=False)
 parser.add_argument('--val_batch', type=int, help='Validation batch size', default=2)
-parser.add_argument('--clusters', type=str, help='Path to clusters', default='clusters_30.csv')
+parser.add_argument('--clusters', type=str, help='Path to clusters', default='cluster30.tsv')
 parser.add_argument('--fine_tune', type=bool, help='Use fine tuning on the base model or not. Default is False', default=False)
 parser.add_argument('--accum', type=int, help='Number of gradient accumulation steps', default=4)
 parser.add_argument('--lr', type=float, help='Learning rate', default=3e-4)
@@ -37,8 +37,6 @@ parser.add_argument('-n', type=str, help='Model name', default='prot_model.pt')
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
-
-
 
 class TokenClassifier(nn.Module):
     """
@@ -106,7 +104,7 @@ class TokenClassifier(nn.Module):
                 loss = loss_fct(logits.view(-1, self.n_labels), labels.view(-1))
 
         if not return_dict:
-            output = (logits,) + outputs[2:]
+            output = (logits,)
             return ((loss,) + output) if loss is not None else output
 
         #return {
@@ -161,7 +159,7 @@ def get_train_test_prots(clusters, train_clusters, test_clusters):
     return set(train_prots), set(test_prots)
 
 def train_model(args, train_ds, test_ds, model, tokenizer,
-                lr=3e-4, epochs=1, batch=50, val_batch=2, accum=6, seed=42, deepspeed=None):
+                lr, epochs, batch, val_batch, accum, seed=42, deepspeed=None):
 
     # Set all random seeds
     set_seeds(seed)
@@ -173,13 +171,15 @@ def train_model(args, train_ds, test_ds, model, tokenizer,
         save_strategy = "epoch",
         output_dir = f"/storage/praha1/home/nexuso1/bio-research/temp_output/{args.n}",
         learning_rate=lr,
-        warmup_ratio=0.02,
         per_device_train_batch_size=batch,
         per_device_eval_batch_size=val_batch,
         gradient_accumulation_steps=accum,
         num_train_epochs=epochs,
         seed = seed,
-        remove_unused_columns=False,
+        remove_unused_columns=True,
+        eval_accumulation_steps=10,
+        weight_decay=0.001,
+        compute_metrics=compute_metrics
     )
 
     data_collator = DataCollatorForTokenClassification(tokenizer)
@@ -254,9 +254,9 @@ def main(args):
         test_dataset = Dataset.from_pandas(test_df)
 
     model = TokenClassifier(pbert, fine_tune=args.fine_tune)
-    compiled_model = torch.compile(model)
-    compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
-    tokenizer, compiled_model, history = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=compiled_model, tokenizer=tokenizer,
+    #compiled_model = torch.compile(model)
+    #compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
+    tokenizer, compiled_model, history = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=model, tokenizer=tokenizer,
                        seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.epochs, accum=args.accum, lr=args.lr)
 
     return tokenizer, model, history
