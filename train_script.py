@@ -185,6 +185,7 @@ def train_model(args, train_ds, test_ds, model, tokenizer,
 
     data_collator = DataCollatorForTokenClassification(tokenizer)
     for b in train_ds.iter(batch_size=2):
+        print(b)
         data_collator.torch_call(b)
         break   
     # Trainer
