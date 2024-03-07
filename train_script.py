@@ -256,7 +256,7 @@ def main(args):
     model = TokenClassifier(pbert, fine_tune=args.fine_tune)
     compiled_model = torch.compile(model)
     compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
-    tokenizer, compiled_model, history = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=model, tokenizer=tokenizer,
+    tokenizer, compiled_model, history = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=compiled_model, tokenizer=tokenizer,
                        seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.epochs, accum=args.accum, lr=args.lr)
 
     return tokenizer, model, history
