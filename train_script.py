@@ -166,8 +166,7 @@ def train_model(args, train_ds, test_ds, model, tokenizer,
 
     # Huggingface Trainer arguments
     args = TrainingArguments(
-        evaluation_strategy = "steps",
-        eval_steps=2,
+        evaluation_strategy = "no",
         logging_strategy = "epoch",
         save_strategy = "epoch",
         output_dir = f"/storage/praha1/home/nexuso1/bio-research/temp_output/{args.n}",
@@ -178,16 +177,13 @@ def train_model(args, train_ds, test_ds, model, tokenizer,
         num_train_epochs=epochs,
         seed = seed,
         remove_unused_columns=True,
-        torch_compile=False,
+        torch_compile=True,
         eval_accumulation_steps=10,
         weight_decay=0.001,
     )
 
     data_collator = DataCollatorForTokenClassification(tokenizer)
-    for b in train_ds.iter(batch_size=2):
-        print(b)
-        data_collator.torch_call(b)
-        break   
+    
     # Trainer
     trainer = Trainer(
         model,
@@ -196,7 +192,6 @@ def train_model(args, train_ds, test_ds, model, tokenizer,
         eval_dataset=test_ds,
         tokenizer=tokenizer,
         data_collator=data_collator,
-        compute_metrics=compute_metrics
     )
 
     # Train model
