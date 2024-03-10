@@ -3,9 +3,11 @@ import pandas as pd
 import numpy as np
 import os
 import glob
+import torch
 
+from train_script import TokenClassifier
 from argparse import ArgumentParser
-from utils import load_torch_model, load_tf_model, flatten_list, preprocess_data, remove_long_sequences
+from utils import load_tf_model, flatten_list, load_torch_model, preprocess_data, remove_long_sequences
 from utils import load_prot_data
 from transformers import BertTokenizer
 from sklearn.metrics import f1_score, accuracy_score
@@ -75,31 +77,7 @@ def prepare_prot_df(args, protein_df):
     test_df = protein_df.loc[protein_ids]
     test_df = remove_long_sequences(test_df, args.max_length)
     test_df = preprocess_data(test_df)
-    
-def test_tf_model(args):
-    import baseline
-    import tensorflow as tf
-
-    model = load_tf_model(args.i)
-    paths = glob.glob(f'{args.t}/*.tfrec')
-    data = baseline.load_data(paths) # tfrec dataset
-    protein_df = load_prot_data(args.prots).set_index('id') # protein dataset (dataframe)
-
-    # Prepare test dataset
-    test = data.filter(lambda x: x['uniprot_id'].ref() in protein_df.index)
-    test = test.batch(256)
-    pred_dict = {id : {'predictions' : np.zeros(shape=(len(protein_df['sequence'][id])))} for id in protein_df.index}
-    for batch in test:
-        print('here')
-        print(batch)
-        preds = model.predict(batch['embeddings'])
-        for id in batch['uniprot_id']:
-            pred_dict[id]['predictions'][batch['position']] = preds.numpy()
-         
-    pred_df = pd.DataFrame.from_dict(pred_dict, orient='index')
-    test_df = protein_df.join(pred_df)
-    print(test_df.head(10))
-    analyze_preds(args, test_df)
+    return test_df
 
 def calculate_metrics(labels, preds):
     # Calculate metrics
@@ -115,11 +93,6 @@ def main(args):
         analyze_preds(args, df)
         return
 
-    if args.mode == 'tf':
-        test_tf_model(args)
-        return
-
-    import torch
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = load_torch_model(args.i)
     tokenizer = BertTokenizer.from_pretrained("Rostlab/prot_bert", do_lower_case=False)
@@ -127,6 +100,7 @@ def main(args):
 
     if args.p:
         test_df = prepare_prot_df(args, protein_df)
+        print(test_df.head(5))
         preds = []
         probs = []
         with torch.no_grad():
