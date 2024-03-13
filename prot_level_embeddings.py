@@ -66,8 +66,8 @@ def get_embeddings( seq_path,
                    model_dir, 
                    per_protein, # whether to derive per-protein (mean-pooled) embeddings
                    max_residues=4000, # number of cumulative residues per batch
-                   max_seq_len=1000, # max length after which we switch to single-sequence processing to avoid OOM
-                   max_batch=100 # max number of sequences per single batch
+                   max_seq_len=1024, # max length after which we switch to single-sequence processing to avoid OOM
+                   max_batch=20 # max number of sequences per single batch
                    ):
     
     seq_dict = dict()
@@ -76,7 +76,8 @@ def get_embeddings( seq_path,
     # Read in fasta
     seq_dict = read_fasta( seq_path )
     model, vocab = get_T5_model(model_dir)
-
+    model = torch.compile(model)
+    print('Model compiled')
     print('########################################')
     print('Example sequence: {}\n{}'.format( next(iter(
             seq_dict.keys())), next(iter(seq_dict.values()))) )
@@ -132,6 +133,7 @@ def get_embeddings( seq_path,
                         identifier, s_len, emb.shape))
 
                 emb_dict[ identifier ] = emb.detach().cpu().numpy().squeeze()
+            print(f'Embedded prots {pdb_ids}')
 
     end = time.time()
     
