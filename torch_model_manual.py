@@ -10,6 +10,7 @@ import json
 import os
 import torcheval
 
+from tqdm.auto import tqdm
 from datetime import datetime
 from utils import remove_long_sequences, load_prot_data
 from datasets import Dataset, IterableDataset
@@ -32,7 +33,7 @@ parser.add_argument('--pretokenized', type=bool, help='Input dataset is already 
 parser.add_argument('--val_batch', type=int, help='Validation batch size', default=4)
 parser.add_argument('--clusters', type=str, help='Path to clusters', default='cluster30.tsv')
 parser.add_argument('--fine_tune', type=bool, help='Use fine tuning on the base model or not. Default is False', default=False)
-parser.add_argument('--accum', type=int, help='Number of gradient accumulation steps', default=3)
+parser.add_argument('--accum', type=int, help='Number of gradient accumulation steps', default=1)
 parser.add_argument('--lr', type=float, help='Learning rate', default=3e-5)
 parser.add_argument('-o', type=str, help='Output folder', default='output')
 parser.add_argument('-n', type=str, help='Model name', default='prot_model.pt')
@@ -225,6 +226,7 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
 
     optim = torch.optim.AdamW(model.parameters(), weight_decay=0.004)
     schedule = torch.optim.lr_scheduler.CyclicLR(optim, gamma=0.99, max_lr=lr, base_lr=lr*0.01, mode='exp_range', scale_mode='iterations',cycle_momentum=False)
+    progress_bar = tqdm(range(len(train_ds) * epochs))
     # Train model
     for epoch in range(epochs):
         for i, batch in enumerate(train_ds):
@@ -235,7 +237,8 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
                 optim.step()
                 schedule.step(epoch)
                 optim.zero_grad()
-
+            progress_bar.update(1)
+            
         eval_model(model, test_ds)
     return tokenizer, model
 
