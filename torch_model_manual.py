@@ -38,8 +38,10 @@ parser.add_argument('--lr', type=float, help='Learning rate', default=3e-5)
 parser.add_argument('-o', type=str, help='Output folder', default='output')
 parser.add_argument('-n', type=str, help='Model name', default='prot_model.pt')
 
+os.environ['TORCH_COMPILE_DEBUG'] = 1
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+torch._inductor.config.compile_threads = 16
 print(device)
 
 class TokenClassifier(nn.Module):
@@ -225,7 +227,7 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
     set_seeds(seed)
 
     optim = torch.optim.AdamW(model.parameters(), weight_decay=0.004)
-    schedule = torch.optim.lr_scheduler.CyclicLR(optim, gamma=0.99, max_lr=lr, base_lr=lr*0.01, mode='exp_range', scale_mode='iterations',cycle_momentum=False)
+    schedule = torch.optim.lr_scheduler.CyclicLR(optim, gamma=0.99, max_lr=lr, base_lr=lr*0.01, mode='exp_range',cycle_momentum=False)
     progress_bar = tqdm(range(len(train_ds) * epochs))
     # Train model
     for epoch in range(epochs):
