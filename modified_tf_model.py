@@ -24,7 +24,6 @@ parser.add_argument('--layers', type=str, help='Sequential classifier layers sha
 def create_model(args, emb_shape, acid_enc_shape,):
     inputs = tf.keras.layers.Input(emb_shape, name='input')
     acid_encoding = tf.keras.layers.Input(acid_enc_shape, name='frequent_aa_encoding')
-    prot_encoding = tf.keras.layer.Input(emb_shape, name='prot_enc')
     last = inputs
     for i, layer in enumerate(args.layers):
         if isinstance(layer, str):
@@ -35,7 +34,7 @@ def create_model(args, emb_shape, acid_enc_shape,):
         last = tf.keras.layers.BatchNormalization()(last)
         if i == 0:
             # Concatenate the normalized input and amino-acid encodings
-            last = tf.keras.layers.Concatenate()([acid_encoding, last, prot_encoding])
+            last = tf.keras.layers.Concatenate()([acid_encoding, last])
 
         last = tf.keras.layers.Dense(units, activation='relu')(last)
         last = tf.keras.layers.Dropout(0.2)(last)
