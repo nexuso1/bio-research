@@ -89,10 +89,11 @@ def train_model(args, model : tf.keras.Model, data, data_length : tf.data.Datase
     print(f'Average F1: {np.sum(f1s) / len(f1s)}')
 
     return model
+
 def save_model(args, model : tf.keras.Model):
     now = datetime.now()
 
-    name = now.strftime("baseline_%Y-%M-%d_%H:%M:%S")
+    name = now.strftime("baseline_%Y-%M-%d_%H_%M_%S")
     model.save(os.path.join(args.o, name), save_format='h5')
 
 def example_prep_fn(example):

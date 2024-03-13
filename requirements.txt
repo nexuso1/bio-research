@@ -5,3 +5,4 @@ transformers
 numpy
 evaluate
 pandas
+torcheval
