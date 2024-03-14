@@ -2,6 +2,7 @@ import urllib
 import os
 import urllib.parse
 import urllib.request
+import urllib.error
 import json
 import pandas as pd
 
@@ -19,9 +20,13 @@ def get_accession_info(id):
     #data = data.encode('ascii')
     request = urllib.request.Request(url)
     request.add_header('accept', 'application/json')
-    with urllib.request.urlopen(request) as response:
-        res = response.read()
-        respone_dict = json.loads(res)
+    try:
+        with urllib.request.urlopen(request) as response:
+            res = response.read()
+            respone_dict = json.loads(res)
+
+    except urllib.error.HTTPError:
+        return False
 
     return respone_dict
 
@@ -34,10 +39,15 @@ def process_prots(args):
     mapping = {}
     for id in prot_df['id']:
         response = get_accession_info(id)
+        if not response:
+            continue
         pdb_url = response[0]['pdbUrl']
         mapping[id] = response[0]['entryId']
         download_pdb(args, id, pdb_url)
     
+    map_df = pd.DataFrame.from_dict(mapping, orient='index', columns=['alphafold_id'])
+    map_df.to_json(f'{args.o}/id_mapping_df.json')
+
 def main(args):
     process_prots(args)
 
