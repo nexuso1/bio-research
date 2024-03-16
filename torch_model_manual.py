@@ -35,6 +35,7 @@ parser.add_argument('--fine_tune', type=bool, help='Use fine tuning on the base 
 parser.add_argument('--weight_decay', type=float, help='Weight decay', default=0.004)
 parser.add_argument('--accum', type=int, help='Number of gradient accumulation steps', default=1)
 parser.add_argument('--rnn', type=bool, help='Use an RNN classification head', default=False)
+parser.add_argument('--val_batch', type=int, help='Validation batch size', default=10)
 parser.add_argument('--hidden_size', type=int, help='RNN hidden size. Only relevant when --rnn=True.', default=256)
 parser.add_argument('--lr', type=float, help='Learning rate', default=3e-4)
 parser.add_argument('-o', type=str, help='Output folder', default='output')
