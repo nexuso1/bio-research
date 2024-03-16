@@ -65,9 +65,13 @@ class TokenClassifier(nn.Module):
             self.freeze_base()
 
     def build_rnn_classifier(self, args):
+        
         lstm = nn.LSTM(self.base.config.hidden_size, hidden_size=args.hidden_size, bidirectional=True, batch_first=True)
         outputs = nn.Linear(args.hidden_size, self.n_labels)(lstm)
-        self.classifier = outputs
+        self.classifier = nn.Sequential(
+            lstm,
+            outputs
+        )
 
     def build_linear_classifier(self, args):
         self.classifier = nn.Sequential(
