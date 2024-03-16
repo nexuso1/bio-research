@@ -239,7 +239,7 @@ def train_model(args, train_ds, test_ds, model : torch.nn.Module, tokenizer,
     # Set all random seeds
     set_seeds(seed)
 
-    optim = torch.optim.AdamW(model.parameters(), weight_decay=0.004)
+    optim = torch.optim.AdamW(model.parameters(), weight_decay=args.weight_decay)
     schedule = torch.optim.lr_scheduler.CyclicLR(optim, gamma=0.99, max_lr=lr, base_lr=lr*0.01, mode='exp_range',cycle_momentum=False)
     progress_bar = tqdm(range(len(train_ds) * epochs))
     # Train model
@@ -312,9 +312,9 @@ def main(args):
         test_dataset = Dataset.from_pandas(test_df)
 
     model = TokenClassifier(pbert, fine_tune=args.fine_tune)
-    #compiled_model = torch.compile(model)
-    #compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
-    tokenizer, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=model, tokenizer=tokenizer,
+    compiled_model = torch.compile(model)
+    compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
+    tokenizer, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=compiled_model, tokenizer=tokenizer,
                        seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.epochs, accum=args.accum, lr=args.lr)
 
     return tokenizer, model
