@@ -45,6 +45,13 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 torch._inductor.config.compile_threads = 16
 print(device)
 
+class ExtractTensorLSTM(nn.Module):
+    def forward(self,x):
+        # Output shape (batch, features, hidden)
+        tensor, _ = x
+        # Reshape shape (batch, hidden)
+        return tensor[:, -1, :]
+
 class TokenClassifier(nn.Module):
     """
     Model that consist of a base embedding model, and a token classification head at the end, using 
@@ -69,6 +76,7 @@ class TokenClassifier(nn.Module):
         outputs = nn.Linear(args.hidden_size, self.n_labels)
         self.classifier = nn.Sequential(
             lstm,
+            ExtractTensorLSTM(),
             outputs
         )
 
