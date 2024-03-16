@@ -38,7 +38,7 @@ parser.add_argument('--lr', type=float, help='Learning rate', default=3e-5)
 parser.add_argument('-o', type=str, help='Output folder', default='output')
 parser.add_argument('-n', type=str, help='Model name', default='prot_model.pt')
 
-os.environ['TORCH_COMPILE_DEBUG'] = 1
+# os.environ['TORCH_COMPILE_DEBUG'] = "1"
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 torch._inductor.config.compile_threads = 16
@@ -218,9 +218,9 @@ def eval_model(model, test_ds, epoch):
             preds = torch.argmax(preds[0], -1).view(-1)
             f1.update(target=batch['labels'].view(-1)[mask], input=preds[mask])
 
-    print(f'Epoch {epoch}, F1: {f1.compute().detach().numpy()}')
+    print(f'Epoch {epoch}, F1: {f1.compute().detach().cpu().numpy()}')
 
-def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Module, tokenizer,
+def train_model(args, train_ds, test_ds, model : torch.nn.Module, tokenizer,
                 lr, epochs, batch, val_batch, accum, seed=42, deepspeed=None):
 
     # Set all random seeds
@@ -234,14 +234,13 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
         for i, batch in enumerate(train_ds):
             batch = {k: v.to(device) for k, v in batch.items()}
             outputs = model(**batch)
-            if accum == 1 or ( i > 0 and i % accum == 0):
-                outputs[0].backward()
-                optim.step()
-                schedule.step(epoch)
-                optim.zero_grad()
+            outputs[0].backward()
+            optim.step()
+            schedule.step(epoch)
+            optim.zero_grad()
             progress_bar.update(1)
 
-        eval_model(model, test_ds)
+        eval_model(model, test_ds, epoch)
     return tokenizer, model
 
 def preprocess_data(df : pd.DataFrame):
@@ -305,7 +304,7 @@ def main(args):
     tokenizer, compiled_model, history = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=compiled_model, tokenizer=tokenizer,
                        seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.epochs, accum=args.accum, lr=args.lr)
 
-    return tokenizer, model, history
+    return tokenizer, model
 
 if __name__ == '__main__':
     args = parser.parse_args()
