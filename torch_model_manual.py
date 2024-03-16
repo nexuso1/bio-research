@@ -17,24 +17,26 @@ from datasets import Dataset, IterableDataset
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
-from transformers import TrainingArguments, Trainer, BertModel, BertTokenizer, set_seed, DataCollatorForTokenClassification
-from torcheval.metrics import BinaryF1Score
+from transformers import BertModel, BertTokenizer, set_seed
+from torcheval.metrics import MulticlassF1Score, MulticlassAccuracy, MulticlassPrecision, MulticlassRecall
 
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--seed', type=int, help='Random seed', default=42)
 parser.add_argument('--batch_size', type=int, help='Maximum batch size (in number of residues)', default=2048)
-parser.add_argument('--epochs', type=int, help='Number of training epochs', default=10)
+parser.add_argument('--epochs', type=int, help='Number of training epochs', default=50)
 parser.add_argument('--max_length', type=int, help='Maximum sequence length (shorter sequences will be pruned)', default=1024)
 parser.add_argument('--fasta', type=str, help='Path to the FASTA protein database', default='./phosphosite_sequences/Phosphosite_seq.fasta')
 parser.add_argument('--phospho', type=str, help='Path to the phoshporylarion dataset', default='./phosphosite_sequences/Phosphorylation_site_dataset')
 parser.add_argument('--dataset_path', type=str, help='Path to the protein dataset. Expects a dataframe with columns ("id", "sequence", "sites"). "sequence" is the protein AA string, "sites" is a list of phosphorylation sites.', default='./phosphosite_sequences/phosphosite_df_small.json')
 parser.add_argument('--pretokenized', type=bool, help='Input dataset is already pretokenized', default=False)
-parser.add_argument('--val_batch', type=int, help='Validation batch size', default=4)
 parser.add_argument('--clusters', type=str, help='Path to clusters', default='cluster30.tsv')
 parser.add_argument('--fine_tune', type=bool, help='Use fine tuning on the base model or not. Default is False', default=False)
+parser.add_argument('--weight_decay', type=float, help='Weight decay', default=0.004)
 parser.add_argument('--accum', type=int, help='Number of gradient accumulation steps', default=1)
-parser.add_argument('--lr', type=float, help='Learning rate', default=3e-5)
+parser.add_argument('--rnn', type=bool, help='Use an RNN classification head', default=False)
+parser.add_argument('--hidden_size', type=int, help='RNN hidden size. Only relevant when --rnn=True.', default=256)
+parser.add_argument('--lr', type=float, help='Learning rate', default=3e-4)
 parser.add_argument('-o', type=str, help='Output folder', default='output')
 parser.add_argument('-n', type=str, help='Model name', default='prot_model.pt')
 
@@ -53,6 +55,21 @@ class TokenClassifier(nn.Module):
         super(TokenClassifier, self).__init__()
         self.base = base_model
         self.n_labels = n_labels
+
+        if args.rnn:
+            self.build_rnn_classifier(args)
+        else:
+            self.build_linear_classifier(args)
+
+        if not fine_tune:
+            self.freeze_base()
+
+    def build_rnn_classifier(self, args):
+        lstm = nn.LSTM(self.base.config.hidden_size, hidden_size=args.hidden_size, bidirectional=True, batch_first=True)
+        outputs = nn.Linear(args.hidden_size, self.n_labels)(lstm)
+        self.classifier = outputs
+
+    def build_linear_classifier(self, args):
         self.classifier = nn.Sequential(
             nn.Linear(self.base.config.hidden_size, 2048),
             nn.ReLU(),
@@ -61,9 +78,6 @@ class TokenClassifier(nn.Module):
             nn.Linear(1024, self.n_labels)
         )
 
-        if not fine_tune:
-            self.freeze_base()
-        
     def freeze_base(self):
         for p in self.base.parameters():
           p.requires_grad = False
@@ -132,12 +146,6 @@ def set_seeds(s):
     np.random.seed(s)
     random.seed(s)
     set_seed(s)
-
-def compute_metrics(eval_pred):
-    preds, labels = eval_pred
-    f1 = evaluate.load('f1')
-    torch.softmax(preds, -1)
-    return f1.compute(predictions = preds, references=labels, labels=[0, 1])
 
 def batch_data(seqs, labels, tokenizer, max_batch_length=2048):
     batch_elements = 0
@@ -208,7 +216,7 @@ def get_train_test_prots(clusters, train_clusters, test_clusters):
     return set(train_prots), set(test_prots)
 
 def eval_model(model, test_ds, epoch):
-    f1 = BinaryF1Score(device=device)
+    f1 = MulticlassF1Score(device=device, average='macro')
     with torch.no_grad():
         for batch in test_ds:
             batch = {k: v.to(device) for k, v in batch.items()}
@@ -216,7 +224,7 @@ def eval_model(model, test_ds, epoch):
                            attention_mask=batch['attention_mask'], token_type_ids=batch['token_type_ids'])
             mask = batch['labels'].view(-1) != -100
             preds = torch.argmax(preds[0], -1).view(-1)
-            f1.update(target=batch['labels'].view(-1)[mask], input=preds[mask])
+            f1 = f1.update(target=batch['labels'].view(-1)[mask], input=preds[mask])
 
     print(f'Epoch {epoch}, F1: {f1.compute().detach().cpu().numpy()}')
 
@@ -299,9 +307,9 @@ def main(args):
         test_dataset = Dataset.from_pandas(test_df)
 
     model = TokenClassifier(pbert, fine_tune=args.fine_tune)
-    compiled_model = torch.compile(model)
-    compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
-    tokenizer, compiled_model, history = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=compiled_model, tokenizer=tokenizer,
+    #compiled_model = torch.compile(model)
+    #compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
+    tokenizer, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=model, tokenizer=tokenizer,
                        seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.epochs, accum=args.accum, lr=args.lr)
 
     return tokenizer, model
