@@ -105,7 +105,10 @@ class TokenClassifier(nn.Module):
         output_attentions=None,
         output_hidden_states=None,
         return_dict = False,
+        training = False
     ):
+        if training:
+            self.base.train()
         outputs = self.base(
             input_ids,
             attention_mask=attention_mask,
@@ -228,6 +231,7 @@ def get_train_test_prots(clusters, train_clusters, test_clusters):
 
 def eval_model(model, test_ds, epoch):
     f1 = MulticlassF1Score(device=device, average='macro')
+    model.eval()
     with torch.no_grad():
         for batch in test_ds:
             batch = {k: v.to(device) for k, v in batch.items()}
@@ -250,9 +254,10 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
     progress_bar = tqdm(range(len(train_ds) * epochs))
     # Train model
     for epoch in range(epochs):
+        model.train()
         for i, batch in enumerate(train_ds):
             batch = {k: v.to(device) for k, v in batch.items()}
-            outputs = model(**batch)
+            outputs = model(training=True, **batch)
             if accum == 1 or ( i > 0 and i % accum == 0):
                 outputs[0].backward()
                 optim.step()
