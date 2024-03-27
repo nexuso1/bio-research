@@ -9,6 +9,8 @@ import evaluate
 import json
 import os
 import torcheval
+import lora
+import re
 
 from tqdm.auto import tqdm
 from datetime import datetime
@@ -26,12 +28,11 @@ parser.add_argument('--seed', type=int, help='Random seed', default=42)
 parser.add_argument('--batch_size', type=int, help='Maximum batch size (in number of residues)', default=2048)
 parser.add_argument('--epochs', type=int, help='Number of training epochs', default=50)
 parser.add_argument('--max_length', type=int, help='Maximum sequence length (shorter sequences will be pruned)', default=1024)
-parser.add_argument('--fasta', type=str, help='Path to the FASTA protein database', default='./phosphosite_sequences/Phosphosite_seq.fasta')
-parser.add_argument('--phospho', type=str, help='Path to the phoshporylarion dataset', default='./phosphosite_sequences/Phosphorylation_site_dataset')
-parser.add_argument('--dataset_path', type=str, help='Path to the protein dataset. Expects a dataframe with columns ("id", "sequence", "sites"). "sequence" is the protein AA string, "sites" is a list of phosphorylation sites.', default='./phosphosite_sequences/phosphosite_df_small.json')
-parser.add_argument('--pretokenized', type=bool, help='Input dataset is already pretokenized', default=False)
+parser.add_argument('--dataset_path', type=str, 
+                     help='Path to the protein dataset. Expects a dataframe with columns ("id", "sequence", "sites"). "sequence" is the protein AA string, "sites" is a list of phosphorylation sites.',
+                     default='./phosphosite_sequences/phosphosite_df_small.json')
 parser.add_argument('--clusters', type=str, help='Path to clusters', default='cluster30.tsv')
-parser.add_argument('--fine_tune', type=bool, help='Use fine tuning on the base model or not. Default is False', default=False)
+parser.add_argument('--fine_tune', action='store_true', help='Use fine tuning on the base model or not. Default is False', default=True)
 parser.add_argument('--weight_decay', type=float, help='Weight decay', default=0.004)
 parser.add_argument('--accum', type=int, help='Number of gradient accumulation steps', default=1)
 parser.add_argument('--rnn', type=bool, help='Use an RNN classification head', default=False)
@@ -40,34 +41,44 @@ parser.add_argument('--hidden_size', type=int, help='RNN hidden size. Only relev
 parser.add_argument('--lr', type=float, help='Learning rate', default=3e-4)
 parser.add_argument('-o', type=str, help='Output folder', default='output')
 parser.add_argument('-n', type=str, help='Model name', default='prot_model.pt')
+parser.add_argument('--layers', type=str, help='Hidden layers for the linear classifier', default='[1024]')
+parser.add_argument('--compile', action='store_true', default=False, help='Compile the model')
+parser.add_argument('--lora', action='store_true', help='Use LoRA', default=False)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 torch._inductor.config.compile_threads = 16
 print(device)
-
-class ExtractTensorLSTM(nn.Module):
-    def forward(self,x):
-        # Output shape (batch, features, hidden)
-        tensor, _ = x
-        # Reshape shape (batch, hidden)
-        return tensor[:, -1, :]
 
 class TokenClassifier(nn.Module):
     """
     Model that consist of a base embedding model, and a token classification head at the end, using 
     the last hidden state as its output.
     """
-    def __init__(self, base_model : nn.Module, dropout = 0.2, n_labels = 2, fine_tune=False) -> None:
+    def __init__(self, base_model : nn.Module, dropout = 0.2, n_labels = 2, fine_tune=False, use_lora=True) -> None:
         super(TokenClassifier, self).__init__()
         self.base = base_model
+        if fine_tune and lora:
+            self.lora_config = lora.BERTLoRAConfig(rank=16)
+            self.base = lora.modify_with_lora(base_model, self.lora_config)
+            
         self.n_labels = n_labels
-
+        self.dropout = nn.Dropout(dropout)
         if args.rnn:
             self.build_rnn_classifier(args)
         else:
             self.build_linear_classifier(args)
 
+        if use_lora:
+            # Freeze base model parameters, except LoRA
+            for (param_name, param) in self.base.named_parameters():
+                param.requires_grad = False       
+
+            for (param_name, param) in self.base.named_parameters():
+                    if re.fullmatch(self.lora_config.trainable_param_names, param_name):
+                        param.requires_grad = True
+
         if not fine_tune:
+            # Freeze base model parameters
             self.freeze_base()
 
     def build_rnn_classifier(self, args):
@@ -76,7 +87,6 @@ class TokenClassifier(nn.Module):
         outputs = nn.Linear(args.hidden_size, self.n_labels)
         self.classifier = nn.Sequential(
             lstm,
-            ExtractTensorLSTM(),
             outputs
         )
 
@@ -98,14 +108,11 @@ class TokenClassifier(nn.Module):
         input_ids=None,
         attention_mask=None,
         token_type_ids=None,
-        position_ids=None,
-        head_mask=None,
-        inputs_embeds=None,
         labels=None,
-        output_attentions=None,
         output_hidden_states=None,
         return_dict = False,
-        training = False
+        training = False, 
+        **kwargs
     ):
         if training:
             self.base.train()
@@ -113,14 +120,12 @@ class TokenClassifier(nn.Module):
             input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
-            position_ids=position_ids,
-            head_mask=head_mask,
-            inputs_embeds=inputs_embeds,
-            output_attentions=output_attentions,
-            output_hidden_states=True
+            output_hidden_states=True,
+            **kwargs
         )
 
         sequence_output = outputs[0]
+        sequence_output = self.dropout(sequence_output)
         logits = self.classifier(sequence_output)
         loss = None
 
@@ -133,7 +138,9 @@ class TokenClassifier(nn.Module):
                 active_labels = torch.where(
                     active_loss, labels.view(-1), torch.tensor(loss_fct.ignore_index).type_as(labels)
                 )
-                loss = loss_fct(active_logits, active_labels)
+                valid_logits=active_logits[active_labels!=-100]
+                valid_labels=active_labels[active_labels!=-100]
+                loss = loss_fct(valid_logits, valid_labels)
             else:
                 loss = loss_fct(logits.view(-1, self.n_labels), labels.view(-1))
 
@@ -298,35 +305,33 @@ def save_as_string(obj, path):
 
 def main(args):
     pbert, tokenizer = get_bert_model()
-    if not args.pretokenized:
-        data = load_prot_data(args.dataset_path)
-        data = remove_long_sequences(data, args.max_length)
-        prepped_data = preprocess_data(data)
-        clusters = load_clusters(args.clusters)
-        train_clusters, test_clusters = split_train_test_clusters(args, clusters, test_size=0.2) # Split clusters into train and test sets
-        train_prots, test_prots = get_train_test_prots(clusters, train_clusters, test_clusters) # Extract the train proteins and test proteins
-        train_df, test_df = split_dataset(prepped_data, train_prots, test_prots) # Split data according to the protein ids
-        print(f'Train dataset shape: {train_df.shape}')
-        print(f'Test dataset shape: {test_df.shape}')
-        
-        test_path = f'./{args.o}/{args.n}_test_data.json'
-        save_as_string(list(test_prots), test_path)
-        print(f'Test prots saved to {test_path}')
-        
-        train_dataset = create_dataset(tokenizer=tokenizer, seqs=list(train_df['sequence']), labels=list(train_df['label']),
-                                    max_batch_residues=args.batch_size) # Create a huggingface dataset
-        test_dataset = create_dataset(tokenizer=tokenizer, seqs=list(test_df['sequence']), labels=list(test_df['label']), 
-                                    max_batch_residues=args.batch_size)
-    else:
-        data = pd.read_json(args.dataset_path)
-        train_df, test_df = train_test_split(prepped_data, random_state=args.seed)
-        train_dataset = Dataset.from_pandas(train_df)
-        test_dataset = Dataset.from_pandas(test_df)
+    data = load_prot_data(args.dataset_path)
+    data = remove_long_sequences(data, args.max_length)
+    prepped_data = preprocess_data(data)
+    clusters = load_clusters(args.clusters)
+    train_clusters, test_clusters = split_train_test_clusters(args, clusters, test_size=0.2) # Split clusters into train and test sets
+    train_prots, test_prots = get_train_test_prots(clusters, train_clusters, test_clusters) # Extract the train proteins and test proteins
+    train_df, test_df = split_dataset(prepped_data, train_prots, test_prots) # Split data according to the protein ids
+    print(f'Train dataset shape: {train_df.shape}')
+    print(f'Test dataset shape: {test_df.shape}')
+    
+    test_path = f'./{args.o}/{args.n}_test_data.json'
+    save_as_string(list(test_prots), test_path)
+    print(f'Test prots saved to {test_path}')
+    
+    train_dataset = create_dataset(tokenizer=tokenizer, seqs=list(train_df['sequence']), labels=list(train_df['label']),
+                                max_batch_residues=args.batch_size) # Create a huggingface dataset
+    test_dataset = create_dataset(tokenizer=tokenizer, seqs=list(test_df['sequence']), labels=list(test_df['label']), 
+                                max_batch_residues=args.batch_size)
 
-    model = TokenClassifier(pbert, fine_tune=args.fine_tune)
-    compiled_model = torch.compile(model)
-    compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
-    tokenizer, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=compiled_model, tokenizer=tokenizer,
+    model = TokenClassifier(pbert, fine_tune=args.fine_tune, use_lora=args.lora)
+    if args.compile:
+        compiled_model = torch.compile(model)
+        compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
+        training_model = compiled_model
+    else:
+        training_model = model
+    tokenizer, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=training_model, tokenizer=tokenizer,
                        seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.epochs, accum=args.accum, lr=args.lr)
 
     return tokenizer, model, history
@@ -335,7 +340,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
     tokenizer, model, history = main(args)
     now = datetime.now()
-
     name = args.n
 
     if not os.path.exists(f'./{args.o}'):
