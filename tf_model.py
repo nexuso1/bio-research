@@ -34,7 +34,7 @@ def create_model(args, input_shape):
         last = tf.keras.layers.Dropout(0.2)(last)
 
     bn = tf.keras.layers.BatchNormalization()(last)
-    outputs = tf.keras.layers.Dense(2, activation='softmax')(bn)
+    outputs = tf.keras.layers.Dense(1, activation='sigmoid')(bn)
     model = tf.keras.Model(inputs=inputs, outputs=outputs)
     model.summary()
     return model
@@ -44,7 +44,9 @@ def build_model(args, model : tf.keras.Model, data_length):
     optim = tf.keras.optimizers.AdamW(learning_rate=schedule)
     metrics = [
         tf.keras.metrics.CategoricalAccuracy(),
-        tf.keras.metrics.F1Score()
+        tf.keras.metrics.F1Score(),
+        tf.keras.metrics.Precision(),
+        tf.keras.metris.Recall()
     ]
 
     model.compile(optimizer=optim,
@@ -118,7 +120,7 @@ def save_model(args, model : tf.keras.Model):
     model.save(os.path.join(args.o, f'{args.n}.h5'), save_format='h5')
 
 def example_prep_fn(example):
-    return example['embeddings'], tf.one_hot(example['target'][0], depth=2)
+    return example['embeddings'], example['target']
 
 def load_clusters(path):
     return pd.read_csv(path, sep='\t', names=['cluster_rep', 'cluster_mem'])
