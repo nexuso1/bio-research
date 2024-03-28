@@ -8,11 +8,12 @@ import argparse
 import evaluate
 import json
 import os
-import torcheval
+import torchvision
 import lora
 import re
 
 from tqdm.auto import tqdm
+from torchvision.ops import focal_loss
 from datetime import datetime
 from utils import remove_long_sequences, load_prot_data
 from datasets import Dataset, IterableDataset
@@ -54,10 +55,10 @@ class TokenClassifier(nn.Module):
     Model that consist of a base embedding model, and a token classification head at the end, using 
     the last hidden state as its output.
     """
-    def __init__(self, base_model : nn.Module, dropout = 0.2, n_labels = 2, fine_tune=False, use_lora=True) -> None:
+    def __init__(self, args, base_model : nn.Module, dropout = 0.2, n_labels = 2, fine_tune=False, use_lora=True) -> None:
         super(TokenClassifier, self).__init__()
         self.base = base_model
-        if fine_tune and lora:
+        if fine_tune and use_lora:
             self.lora_config = lora.BERTLoRAConfig(rank=16)
             self.base = lora.modify_with_lora(base_model, self.lora_config)
             
@@ -89,6 +90,25 @@ class TokenClassifier(nn.Module):
             lstm,
             outputs
         )
+
+    def build_cnn_classifier(self, args):
+        layer_conf = [(self.base.config.hidden_size, 128, 1, 1),
+                      (128, 192, 5, 2),
+                      (192, 256, 5, 2)
+                      ]
+        
+        layers = []
+        for in_channels, out_channels, k, stride in layer_conf:
+            layers.append(torch.nn.Conv1d(in_channels, out_channels, kernel_size=k, stride=stride))
+            layers.append(torch.nn.BatchNorm1d(out_channels))
+            layers.append(torch.nn.ReLU())
+
+        layers.append(torch.nn.AdaptiveAvgPool1d(1))
+        layers.append(torch.nn.Dropout(0.1))
+        layers.append(torch.nn.Linear(layer_conf[-1][1], self.n_labels))
+
+        self.classifier = torch.nn.Sequential(*layers)
+        
 
     def build_linear_classifier(self, args):
         self.classifier = nn.Sequential(
@@ -130,7 +150,7 @@ class TokenClassifier(nn.Module):
         loss = None
 
         if labels is not None:
-            loss_fct = CrossEntropyLoss(label_smoothing=0.1)
+            loss_fct = focal_loss.sigmoid_focal_loss
             # Only keep active parts of the loss
             if attention_mask is not None:
                 active_loss = attention_mask.view(-1) == 1
@@ -277,7 +297,7 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
 
 def preprocess_data(df : pd.DataFrame):
     """
-    Preprocessing for Pbert/ProtT5
+    Preprocessing for Pbert/ProtT5. Replaces rare residues with 'X' and adds spaces between residues
     """
     df['sequence'] = df['sequence'].str.replace('|'.join(["O","B","U","Z"]),"X",regex=True)
     df['sequence'] = df.apply(lambda row : " ".join(row["sequence"]), axis = 1)
