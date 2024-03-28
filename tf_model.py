@@ -43,10 +43,10 @@ def build_model(args, model : tf.keras.Model, data_length):
     schedule = tf.keras.optimizers.schedules.CosineDecay(args.lr, alpha=args.alpha, decay_steps=(data_length // args.batch_size) * args.epochs)
     optim = tf.keras.optimizers.AdamW(learning_rate=schedule)
     metrics = [
-        tf.keras.metrics.CategoricalAccuracy(),
+        tf.keras.metrics.BinaryAccuracy(),
         tf.keras.metrics.F1Score(),
-        tf.keras.metrics.Precision(),
-        tf.keras.metris.Recall()
+        # tf.keras.metrics.Precision(),
+        # tf.keras.metrics.Recall()
     ]
 
     model.compile(optimizer=optim,
@@ -111,7 +111,7 @@ def train_model(args, model : tf.keras.Model, train_data : tf.data.Dataset, test
 
     model.fit(train_data,  epochs=args.epochs, use_multiprocessing=True, workers=-1, 
                 batch_size=args.batch_size, validation_data=test_data, callbacks=callbacks)
-    loss, acc, f1 = model.evaluate(test_data, workers=-1, use_multiprocessing=True, batch_size=args.batch_size)
+    loss, acc, f1, prec, recall = model.evaluate(test_data, workers=-1, use_multiprocessing=True, batch_size=args.batch_size)
     print(f'Training finished with acc: {acc}, f1: {f1}')
 
     return model
@@ -120,7 +120,8 @@ def save_model(args, model : tf.keras.Model):
     model.save(os.path.join(args.o, f'{args.n}.h5'), save_format='h5')
 
 def example_prep_fn(example):
-    return example['embeddings'], example['target']
+    # Cast needed because of some metrics bug that tries to convert the target to float
+    return example['embeddings'], tf.cast(example['target'], tf.float32)
 
 def load_clusters(path):
     return pd.read_csv(path, sep='\t', names=['cluster_rep', 'cluster_mem'])
