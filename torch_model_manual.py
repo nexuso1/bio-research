@@ -46,6 +46,8 @@ parser.add_argument('--layers', type=str, help='Hidden layers for the linear cla
 parser.add_argument('--compile', action='store_true', default=False, help='Compile the model')
 parser.add_argument('--lora', action='store_true', help='Use LoRA', default=False)
 
+# os.environ['TORCH_COMPILE_DEBUG'] = "1"
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 torch._inductor.config.compile_threads = 16
 print(device)
@@ -270,7 +272,7 @@ def eval_model(model, test_ds, epoch):
 
     print(f'Epoch {epoch}, F1: {f1.compute().detach().cpu().numpy()}')
 
-def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Module, tokenizer,
+def train_model(args, train_ds, test_ds, model : torch.nn.Module, tokenizer,
                 lr, epochs, batch, val_batch, accum, seed=42, deepspeed=None):
 
     # Set all random seeds
@@ -354,7 +356,7 @@ def main(args):
     tokenizer, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=training_model, tokenizer=tokenizer,
                        seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.epochs, accum=args.accum, lr=args.lr)
 
-    return tokenizer, model, history
+    return tokenizer, model
 
 if __name__ == '__main__':
     args = parser.parse_args()

@@ -34,7 +34,7 @@ def create_model(args, input_shape):
         last = tf.keras.layers.Dropout(0.2)(last)
 
     bn = tf.keras.layers.BatchNormalization()(last)
-    outputs = tf.keras.layers.Dense(2, activation='softmax')(bn)
+    outputs = tf.keras.layers.Dense(1, activation='sigmoid')(bn)
     model = tf.keras.Model(inputs=inputs, outputs=outputs)
     model.summary()
     return model
@@ -44,11 +44,13 @@ def build_model(args, model : tf.keras.Model, data_length):
     optim = tf.keras.optimizers.AdamW(learning_rate=schedule)
     metrics = [
         tf.keras.metrics.CategoricalAccuracy(),
-        tf.keras.metrics.F1Score()
+        tf.keras.metrics.F1Score(),
+        tf.keras.metrics.Precision(),
+        tf.keras.metris.Recall()
     ]
 
     model.compile(optimizer=optim,
-                   loss=tf.keras.losses.BinaryFocalCrossentropy(label_smoothing=0.1, apply_class_balancing=True),
+                   loss=tf.keras.losses.BinaryFocalCrossentropy(gamma=3.0, apply_class_balancing=False),
                    metrics=metrics)
     
     return model
@@ -97,8 +99,18 @@ def get_train_test_prots(clusters, train_clusters, test_clusters):
     return set(train_prots), set(test_prots)
 
 def train_model(args, model : tf.keras.Model, train_data : tf.data.Dataset, test_data : tf.data.Dataset):
+    callbacks = [tf.keras.callbacks.EarlyStopping(
+    monitor='val_f1_score',
+    min_delta=0,
+    patience=10,
+    verbose=0,
+    mode='max',
+    restore_best_weights=True,
+    start_from_epoch=2
+)]
+
     model.fit(train_data,  epochs=args.epochs, use_multiprocessing=True, workers=-1, 
-                batch_size=args.batch_size, validation_data=test_data)
+                batch_size=args.batch_size, validation_data=test_data, callbacks=callbacks)
     loss, acc, f1 = model.evaluate(test_data, workers=-1, use_multiprocessing=True, batch_size=args.batch_size)
     print(f'Training finished with acc: {acc}, f1: {f1}')
 
@@ -108,7 +120,7 @@ def save_model(args, model : tf.keras.Model):
     model.save(os.path.join(args.o, f'{args.n}.h5'), save_format='h5')
 
 def example_prep_fn(example):
-    return example['embeddings'], tf.one_hot(example['target'][0], depth=2)
+    return example['embeddings'], example['target']
 
 def load_clusters(path):
     return pd.read_csv(path, sep='\t', names=['cluster_rep', 'cluster_mem'])
