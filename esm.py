@@ -419,7 +419,7 @@ def main(args):
         compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
         training_model = compiled_model
     else:
-        training_model = model
+        training_model = model.to(device)
     tokenizer, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=training_model, tokenizer=tokenizer,
                        seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.epochs, accum=args.accum, lr=args.lr)
 
