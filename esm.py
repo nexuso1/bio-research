@@ -360,7 +360,8 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
                 optim.zero_grad()
             progress_bar.update(1)
 
-            eval_model(model, test_ds, epoch)
+        print(f'Epoch {epoch}, starting evaluation...')
+        eval_model(model, test_ds, epoch)
     return tokenizer, model
 
 def preprocess_data(df : pd.DataFrame):
