@@ -26,7 +26,7 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('--seed', type=int, help='Random seed', default=42)
 parser.add_argument('--batch_size', type=int, help='Maximum batch size (in number of residues)', default=2048)
-parser.add_argument('--epochs', type=int, help='Number of training epochs', default=20)
+parser.add_argument('--epochs', type=int, help='Number of training epochs', default=1)
 parser.add_argument('--max_length', type=int, help='Maximum sequence length (shorter sequences will be pruned)', default=1024)
 parser.add_argument('--dataset_path', type=str, 
                      help='Path to the protein dataset. Expects a dataframe with columns ("id", "sequence", "sites"). "sequence" is the protein AA string, "sites" is a list of phosphorylation sites.',
@@ -46,6 +46,7 @@ parser.add_argument('--compile', action='store_true', default=False, help='Compi
 parser.add_argument('--lora', action='store_true', help='Use LoRA', default=False)
 parser.add_argument('--cnn', action='store_true', help='Use CNN classifier', default=False)
 parser.add_argument('--mlp', action='store_true', help='Use an MLP classifier', default=False)
+parser.add_argument('--ft_epochs', type=int, help='Number of epochs for finetuning', default=10)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -372,8 +373,9 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
                 optim.zero_grad()
             progress_bar.update(1)
 
-            print(f'Epoch {epoch}, starting evaluation...')
-            eval_model(model, test_ds, epoch)
+        print(f'Epoch {epoch}, starting evaluation...')
+        eval_model(model, test_ds, epoch)
+
     return tokenizer, model
 
 def preprocess_data(df : pd.DataFrame):
@@ -403,6 +405,13 @@ def save_as_string(obj, path):
     with open(path, 'w') as f:
         json.dump(obj, f)
 
+def save_model(args, model, name):
+    save_path = f'{args.o}/{name}.pt'
+    if not os.path.exists(f'{args.o}'):
+        os.mkdir(f'{args.o}')
+
+    torch.save(model, save_path)
+    print(f'Model saved to {save_path}')
 
 def main(args):
     set_seeds(args.seed)
@@ -436,15 +445,22 @@ def main(args):
     tokenizer, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=training_model, tokenizer=tokenizer,
                        seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.epochs, accum=args.accum, lr=args.lr)
 
-    return tokenizer, model, history
+    save_model(args, model, f'{args.o}_pre_ft.pt')
+    if args.fine_tune:
+        # Unfreeze base
+        model.unfreeze_base()
+        # Recompile model
+        training_model = torch.compile(model)
+
+        # Train with a lower learning rate
+        tokenizer, compiled_model = train_model(args, args, train_ds=train_dataset, test_ds=test_dataset, model=training_model, tokenizer=tokenizer,
+                       seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.ft_epochs, accum=args.accum, lr=args.lr / 10)
+        
+    return tokenizer, model
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    tokenizer, model, history = main(args)
+    tokenizer, model = main(args)
     now = datetime.now()
     name = args.n
-
-    if not os.path.exists(f'./{args.o}'):
-        os.mkdir(f'./{args.o}')
-
-    torch.save(model, f'./{args.o}/{name}.pt')
+    save_model(args, model, name)
