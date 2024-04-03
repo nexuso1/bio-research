@@ -11,16 +11,12 @@ import lora
 import re
 
 from tqdm.auto import tqdm
-from torchvision.ops import focal_loss
-from datetime import datetime
 from utils import remove_long_sequences, load_prot_data
-from datasets import Dataset, IterableDataset
-from torch.nn import CrossEntropyLoss
+from datasets import Dataset
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
-from transformers import BertModel, BertTokenizer, set_seed, EsmModel, AutoTokenizer
+from transformers import set_seed, EsmModel, AutoTokenizer
 from torcheval.metrics import BinaryF1Score, BinaryPrecision, BinaryRecall, BinaryConfusionMatrix
-from functools import partial
 
 parser = argparse.ArgumentParser()
 
@@ -38,7 +34,7 @@ parser.add_argument('--accum', type=int, help='Number of gradient accumulation s
 parser.add_argument('--rnn', type=bool, help='Use an RNN classification head', default=False)
 parser.add_argument('--val_batch', type=int, help='Validation batch size', default=10)
 parser.add_argument('--hidden_size', type=int, help='Classifier hidden size. Relevant for cnn, rnn and simple classifiers', default=256)
-parser.add_argument('--lr', type=float, help='Learning rate', default=3e-4)
+parser.add_argument('--lr', type=float, help='Learning rate', default=1e-4)
 parser.add_argument('-o', type=str, help='Output folder', default='output')
 parser.add_argument('-n', type=str, help='Model name', default='esm.pt')
 parser.add_argument('--layers', type=str, help='Hidden layers for the linear classifier', default='[1024]')
@@ -55,7 +51,7 @@ print(device)
 class TokenClassifier(nn.Module):
     """
     Model that consist of a base embedding model, and a token classification head at the end, using 
-    the last hidden state as its output.
+    the last hidden states as its input.
     """
     ignore_index = -100 # Ignore labels with index -100
     token_model = None
@@ -63,9 +59,9 @@ class TokenClassifier(nn.Module):
     def __init__(self, args, base_model : nn.Module, dropout = 0.2, n_labels = 1, fine_tune=False, use_lora=False) -> None:
         super(TokenClassifier, self).__init__()
         self.base = base_model
+
         if fine_tune and use_lora:
-            self.lora_config = lora.BERTLoRAConfig(rank=16)
-            self.base = lora.modify_with_lora(base_model, self.lora_config)
+            self.apply_lora()
         
         self.n_labels = n_labels
         # Focal loss for each element that will be summed
@@ -82,18 +78,21 @@ class TokenClassifier(nn.Module):
         else:
             self.build_simple_classifier(args)
 
-        if use_lora:
-            # Freeze base model parameters, except LoRA
-            for (param_name, param) in self.base.named_parameters():
-                param.requires_grad = False       
-
-            for (param_name, param) in self.base.named_parameters():
-                    if re.fullmatch(self.lora_config.trainable_param_names, param_name):
-                        param.requires_grad = True
-
         if not fine_tune:
             # Freeze base model parameters
             self.freeze_base()
+
+    def apply_lora(self, config=lora.MultiPurposeLoRAConfig(rank=256)):
+        self.lora_config = config
+        self.base = lora.modify_with_lora(self.base, self.lora_config)
+
+        # Freeze base model parameters, except LoRA
+        for (param_name, param) in self.base.named_parameters():
+            param.requires_grad = False       
+
+        for (param_name, param) in self.base.named_parameters():
+                if re.fullmatch(self.lora_config.trainable_param_names, param_name):
+                    param.requires_grad = True
 
     def init_weights(self, m):
         """
@@ -357,7 +356,8 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
     set_seeds(seed)
 
     optim = torch.optim.AdamW(model.parameters(), weight_decay=args.weight_decay)
-    schedule = torch.optim.lr_scheduler.CyclicLR(optim, gamma=0.99, max_lr=lr, base_lr=lr*0.01, mode='exp_range',cycle_momentum=False)
+    #schedule = torch.optim.lr_scheduler.CyclicLR(optim, gamma=0.99, max_lr=lr, base_lr=lr*0.01, mode='exp_range',cycle_momentum=False)
+    schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, len(train_ds) * epochs)
     progress_bar = tqdm(range(len(train_ds) * epochs))
 
     # Train model
@@ -375,8 +375,7 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
 
         print(f'Epoch {epoch}, starting evaluation...')
         eval_model(model, test_ds, epoch)
-
-    return tokenizer, model
+    return tokenizer, model 
 
 def preprocess_data(df : pd.DataFrame):
     """
@@ -415,7 +414,7 @@ def save_model(args, model, name):
 
 def main(args):
     set_seeds(args.seed)
-    pbert, tokenizer = get_esm()
+    base, tokenizer = get_esm()
     data = load_prot_data(args.dataset_path)
     data = remove_long_sequences(data, args.max_length)
     #prepped_data = preprocess_data(data)
@@ -435,7 +434,7 @@ def main(args):
     test_dataset = create_dataset(tokenizer=tokenizer, seqs=list(test_df['sequence']), labels=list(test_df['label']), 
                                 max_batch_residues=args.batch_size)
 
-    model = TokenClassifier(args, pbert, fine_tune=args.fine_tune, use_lora=args.lora)
+    model = TokenClassifier(args, base, use_lora=False, fine_tune=False)
     if args.compile:
         compiled_model = torch.compile(model)
         compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
@@ -445,22 +444,29 @@ def main(args):
     tokenizer, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=training_model, tokenizer=tokenizer,
                        seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.epochs, accum=args.accum, lr=args.lr)
 
-    save_model(args, model, f'{args.o}_pre_ft.pt')
     if args.fine_tune:
+        save_model(args, model, f'{args.o}_pre_ft.pt')
         # Unfreeze base
         model.unfreeze_base()
+
+        if args.lora:
+            model.apply_lora()
+
         # Recompile model
-        training_model = torch.compile(model)
+        if args.compile:
+            compiled_model = torch.compile(model)
+            compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
+            training_model = compiled_model
+        else:
+            training_model = model.to(device)
 
         # Train with a lower learning rate
-        tokenizer, compiled_model = train_model(args, args, train_ds=train_dataset, test_ds=test_dataset, model=training_model, tokenizer=tokenizer,
-                       seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.ft_epochs, accum=args.accum, lr=args.lr / 10)
+        tokenizer, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=training_model, tokenizer=tokenizer,
+                       seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.ft_epochs, accum=args.accum, lr=args.lr)
         
     return tokenizer, model
 
 if __name__ == '__main__':
     args = parser.parse_args()
     tokenizer, model = main(args)
-    now = datetime.now()
-    name = args.n
-    save_model(args, model, name)
+    save_model(args, model, args.n)
