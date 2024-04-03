@@ -19,7 +19,7 @@ from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
 from transformers import BertModel, BertTokenizer, set_seed, EsmModel, AutoTokenizer
-from torcheval.metrics import BinaryF1Score, BinaryPrecision, BinaryRecall
+from torcheval.metrics import BinaryF1Score, BinaryPrecision, BinaryRecall, BinaryConfusionMatrix
 from functools import partial
 
 parser = argparse.ArgumentParser()
@@ -325,7 +325,13 @@ def get_train_test_prots(clusters, train_clusters, test_clusters):
     return set(train_prots), set(test_prots)
 
 def eval_model(model, test_ds, epoch):
-    f1 = BinaryF1Score(device=device)
+    metrics = [
+        (BinaryF1Score(threshold=0.5, device=device), 'f1'),
+        (BinaryPrecision(threshold=0.5, device=device), 'precision'),
+        (BinaryRecall(threshold=0.5, device=device), 'recall'),
+        (BinaryConfusionMatrix(threshold=0.5, device=device), 'confusion matrix')
+    ]
+
     model.eval()
     with torch.no_grad():
         for batch in test_ds:
@@ -333,10 +339,14 @@ def eval_model(model, test_ds, epoch):
             # Model returns a tuple, logits are the first element when not given labels
             preds = model(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'], batch_lens=batch['batch_lens'])
             mask = batch['labels'].view(-1) != -100
-            preds = preds[0].view(-1)
-            f1 = f1.update(target=batch['labels'].view(-1)[mask], input=preds[mask])
+            preds = torch.sigmoid(preds[0].view(-1)[mask])
+            target = batch['labels'].view(-1)[mask]
+            for metric, _ in metrics:
+                metric.update(target=target.int(), input=preds)
 
-    print(f'Epoch {epoch}, F1: {f1.compute().detach().cpu().numpy()}')
+    print('Epoch {epoch}:')
+    for metric, name in metrics:
+        print(f'    {name}: {metric.compute().detach().cpu().numpy()}')
 
 def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Module, tokenizer,
                 lr, epochs, batch, val_batch, accum, seed=42, deepspeed=None):
@@ -347,6 +357,7 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
     optim = torch.optim.AdamW(model.parameters(), weight_decay=args.weight_decay)
     schedule = torch.optim.lr_scheduler.CyclicLR(optim, gamma=0.99, max_lr=lr, base_lr=lr*0.01, mode='exp_range',cycle_momentum=False)
     progress_bar = tqdm(range(len(train_ds) * epochs))
+
     # Train model
     for epoch in range(epochs):
         model.train()
@@ -360,8 +371,8 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
                 optim.zero_grad()
             progress_bar.update(1)
 
-        print(f'Epoch {epoch}, starting evaluation...')
-        eval_model(model, test_ds, epoch)
+            print(f'Epoch {epoch}, starting evaluation...')
+            eval_model(model, test_ds, epoch)
     return tokenizer, model
 
 def preprocess_data(df : pd.DataFrame):
