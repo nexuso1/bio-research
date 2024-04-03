@@ -37,10 +37,10 @@ parser.add_argument('--weight_decay', type=float, help='Weight decay', default=0
 parser.add_argument('--accum', type=int, help='Number of gradient accumulation steps', default=1)
 parser.add_argument('--rnn', type=bool, help='Use an RNN classification head', default=False)
 parser.add_argument('--val_batch', type=int, help='Validation batch size', default=10)
-parser.add_argument('--hidden_size', type=int, help='RNN hidden size. Only relevant when --rnn=True.', default=256)
+parser.add_argument('--hidden_size', type=int, help='Classifier hidden size. Relevant for cnn, rnn and simple classifiers', default=256)
 parser.add_argument('--lr', type=float, help='Learning rate', default=3e-4)
 parser.add_argument('-o', type=str, help='Output folder', default='output')
-parser.add_argument('-n', type=str, help='Model name', default='prot_model.pt')
+parser.add_argument('-n', type=str, help='Model name', default='esm.pt')
 parser.add_argument('--layers', type=str, help='Hidden layers for the linear classifier', default='[1024]')
 parser.add_argument('--compile', action='store_true', default=False, help='Compile the model')
 parser.add_argument('--lora', action='store_true', help='Use LoRA', default=False)
@@ -188,7 +188,7 @@ class TokenClassifier(nn.Module):
         
         # Last hidden state
         sequence_output = outputs[0] 
-
+        print(input_ids.shape)
         # Generate per-sequence representations via averaging
 #        NOTE: token 0 is always a beginning-of-sequence token, so the first residue is token 1.
         sequence_reps = []
