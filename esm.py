@@ -94,6 +94,8 @@ class TokenClassifier(nn.Module):
                 if re.fullmatch(self.lora_config.trainable_param_names, param_name):
                     param.requires_grad = True
 
+        print('LoRA applied.')
+
     def init_weights(self, m):
         """
         Uses xavier/glorot weight initialization for linear layers, and 0 for bias
