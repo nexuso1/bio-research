@@ -43,7 +43,7 @@ parser.add_argument('--lora', action='store_true', help='Use LoRA', default=Fals
 parser.add_argument('--cnn', action='store_true', help='Use CNN classifier', default=False)
 parser.add_argument('--mlp', action='store_true', help='Use an MLP classifier', default=False)
 parser.add_argument('--ft_epochs', type=int, help='Number of epochs for finetuning', default=10)
-
+parser.add_argument('--type', help='ESM Model type', type=str, default='650M')
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 print(device)
@@ -245,8 +245,13 @@ class TokenClassifier(nn.Module):
          #   'outputs' : (loss, outputs)
         #}
 
-def get_esm():
-    model, tokenizer = EsmModel.from_pretrained('facebook/esm2_t33_650M_UR50D'), AutoTokenizer.from_pretrained('facebook/esm2_t33_650M_UR50D')
+def get_esm(args):
+    if args.type == '3B':
+        model, tokenizer = EsmModel.from_pretrained('facebook/esm2_t36_3B_UR50D'), AutoTokenizer.from_pretrained('facebook/esm2_t36_3B_UR50D')
+    elif args.type == '15B':
+        model, tokenizer = EsmModel.from_pretrained('facebook/esm2_t48_15B_UR50D'), AutoTokenizer.from_pretrained('facebook/esm2_t48_15B_UR50D')
+    else:
+        model, tokenizer = EsmModel.from_pretrained('facebook/esm2_t33_650M_UR50D'), AutoTokenizer.from_pretrained('facebook/esm2_t33_650M_UR50D')
     return model, tokenizer
 
 def set_seeds(s):
@@ -414,7 +419,7 @@ def save_model(args, model, name):
 
 def main(args):
     set_seeds(args.seed)
-    base, tokenizer = get_esm()
+    base, tokenizer = get_esm(args)
     data = load_prot_data(args.dataset_path)
     data = remove_long_sequences(data, args.max_length)
     #prepped_data = preprocess_data(data)
