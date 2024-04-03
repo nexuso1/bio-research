@@ -3,11 +3,11 @@
 
 import torch.nn as nn
 import torch
-import torch.functional as F
+import torch.nn.functional as F
 import re
 
-class BERTLoRAConfig:
-    def __init__(self, rank = 4, init_scale=0.01, modules = ".*attention.self"
+class MultiPurposeLoRAConfig:
+    def __init__(self, rank = 4, init_scale=0.01, modules = ".*attention.self|.*dense"
                  , layers = "query|key|value|output", trainable_param_names = ".*LayerNorm*|.*lora_[ab].*",
                    scaling_rank = 1):
         self.lora_rank = rank
