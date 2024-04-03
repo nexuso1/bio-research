@@ -179,7 +179,6 @@ class TokenClassifier(nn.Module):
     ):
         if training:
             self.base.train()
-
         outputs = self.base(
             input_ids,
             attention_mask=attention_mask,
@@ -331,9 +330,10 @@ def eval_model(model, test_ds, epoch):
     with torch.no_grad():
         for batch in test_ds:
             batch = {k: v.to(device) for k, v in batch.items()}
-            preds = model(**batch)
+            # Model returns a tuple, logits are the first element when not given labels
+            preds = model(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'], batch_lens=batch['batch_lens'])
             mask = batch['labels'].view(-1) != -100
-            # preds = torch.argmax(preds[0], -1).view(-1)
+            preds = preds[0].view(-1)
             f1 = f1.update(target=batch['labels'].view(-1)[mask], input=preds[mask])
 
     print(f'Epoch {epoch}, F1: {f1.compute().detach().cpu().numpy()}')
