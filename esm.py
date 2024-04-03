@@ -179,6 +179,7 @@ class TokenClassifier(nn.Module):
     ):
         if training:
             self.base.train()
+
         outputs = self.base(
             input_ids,
             attention_mask=attention_mask,
@@ -188,7 +189,6 @@ class TokenClassifier(nn.Module):
         
         # Last hidden state
         sequence_output = outputs[0] 
-        print(input_ids.shape)
         # Generate per-sequence representations via averaging
 #        NOTE: token 0 is always a beginning-of-sequence token, so the first residue is token 1.
         sequence_reps = []
@@ -326,15 +326,14 @@ def get_train_test_prots(clusters, train_clusters, test_clusters):
     return set(train_prots), set(test_prots)
 
 def eval_model(model, test_ds, epoch):
-    f1 = BinaryF1Score(device=device, average='macro')
+    f1 = BinaryF1Score(device=device)
     model.eval()
     with torch.no_grad():
         for batch in test_ds:
             batch = {k: v.to(device) for k, v in batch.items()}
-            preds = model(input_ids=batch['input_ids'],
-                           attention_mask=batch['attention_mask'], token_type_ids=batch['token_type_ids'])
+            preds = model(**batch)
             mask = batch['labels'].view(-1) != -100
-            preds = torch.argmax(preds[0], -1).view(-1)
+            # preds = torch.argmax(preds[0], -1).view(-1)
             f1 = f1.update(target=batch['labels'].view(-1)[mask], input=preds[mask])
 
     print(f'Epoch {epoch}, F1: {f1.compute().detach().cpu().numpy()}')
@@ -361,7 +360,7 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
                 optim.zero_grad()
             progress_bar.update(1)
 
-        eval_model(model, test_ds, epoch)
+            eval_model(model, test_ds, epoch)
     return tokenizer, model
 
 def preprocess_data(df : pd.DataFrame):
