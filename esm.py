@@ -390,7 +390,6 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
                 schedule.step(epoch)
                 optim.zero_grad()
             progress_bar.update(1)
-            break
 
         print(f'Epoch {epoch}, starting evaluation...')
         metrics = eval_model(model, test_ds, epoch)
