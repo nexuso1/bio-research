@@ -372,8 +372,8 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
 
     optim = torch.optim.AdamW(model.parameters(), weight_decay=args.weight_decay)
     # Cycle momentum not available with adam
-    schedule = torch.optim.lr_scheduler.CyclicLR(optim, gamma=0.95, max_lr=lr, base_lr=lr*0.01, mode='exp_range',
-                                                 cycle_momentum=False)
+    schedule = torch.optim.lr_scheduler.CyclicLR(optim, gamma=0.99, max_lr=lr, base_lr=lr*0.01,
+                                                  mode='exp_range',cycle_momentum=False)
     #schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, len(train_ds) * epochs)
     progress_bar = tqdm(range(len(train_ds) * epochs))
 
