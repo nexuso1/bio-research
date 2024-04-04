@@ -44,6 +44,8 @@ parser.add_argument('--cnn', action='store_true', help='Use CNN classifier', def
 parser.add_argument('--mlp', action='store_true', help='Use an MLP classifier', default=False)
 parser.add_argument('--ft_epochs', type=int, help='Number of epochs for finetuning', default=10)
 parser.add_argument('--type', help='ESM Model type', type=str, default='650M')
+parser.add_argument('--pos_weight', help='Positive class weight', type=float, default=None)
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 print(device)
@@ -67,7 +69,12 @@ class TokenClassifier(nn.Module):
         # Focal loss for each element that will be summed
         # self.loss = partial(focal_loss.sigmoid_focal_loss, reduction='sum')
         # BCE Loss with weight 95 for the positive class. In the dataset, the 
-        self.loss = torch.nn.BCEWithLogitsLoss()
+
+        pos_weight = None
+        if args.pos_weight:
+            pos_weight = torch.Tensor([args.pos_weight])
+        
+        self.loss = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
         self.dropout = nn.Dropout(dropout)
         if args.rnn:
             self.build_rnn_classifier(args)
