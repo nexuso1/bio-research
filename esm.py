@@ -352,7 +352,7 @@ def eval_model(model, test_ds, epoch):
             for metric, _ in metrics:
                 metric.update(target=target.int(), input=preds)
 
-    print('Epoch {epoch}:')
+    print(f'Epoch {epoch}:')
     for metric, name in metrics:
         print(f'    {name}: {metric.compute().detach().cpu().numpy()}')
 
@@ -379,6 +379,7 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
                 schedule.step(epoch)
                 optim.zero_grad()
             progress_bar.update(1)
+            break
 
         print(f'Epoch {epoch}, starting evaluation...')
         eval_model(model, test_ds, epoch)
