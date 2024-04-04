@@ -67,7 +67,7 @@ class TokenClassifier(nn.Module):
         # Focal loss for each element that will be summed
         # self.loss = partial(focal_loss.sigmoid_focal_loss, reduction='sum')
         # BCE Loss with weight 95 for the positive class. In the dataset, the 
-        self.loss = torch.nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor([0.95]))
+        self.loss = torch.nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor())
         self.dropout = nn.Dropout(dropout)
         if args.rnn:
             self.build_rnn_classifier(args)
@@ -362,6 +362,8 @@ def eval_model(model, test_ds, epoch):
         print(f'    {name}: {val}')
         res[name] = val
 
+    return res
+
 def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Module, tokenizer,
                 lr, epochs, batch, val_batch, accum, seed=42, deepspeed=None):
 
@@ -375,6 +377,7 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
     #schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, len(train_ds) * epochs)
     progress_bar = tqdm(range(len(train_ds) * epochs))
 
+    history = []
     # Train model
     for epoch in range(epochs):
         model.train()
@@ -387,10 +390,12 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
                 schedule.step(epoch)
                 optim.zero_grad()
             progress_bar.update(1)
+            break
 
         print(f'Epoch {epoch}, starting evaluation...')
-        eval_model(model, test_ds, epoch)
-    return tokenizer, model 
+        metrics = eval_model(model, test_ds, epoch)
+        history.append(metrics)
+    return history, model
 
 def preprocess_data(df : pd.DataFrame):
     """
@@ -456,11 +461,11 @@ def main(args):
         training_model = compiled_model
     else:
         training_model = model.to(device)
-    tokenizer, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=training_model, tokenizer=tokenizer,
+    history, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=training_model, tokenizer=tokenizer,
                        seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.epochs, accum=args.accum, lr=args.lr)
 
     if args.fine_tune:
-        save_model(args, model, f'{args.o}_pre_ft.pt')
+        save_model(args, model, f'{args.n}_pre_ft')
         # Unfreeze base
         model.unfreeze_base()
 
@@ -476,12 +481,13 @@ def main(args):
             training_model = model.to(device)
 
         # Train with a lower learning rate
-        tokenizer, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=training_model, tokenizer=tokenizer,
+        ft_history, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=training_model, tokenizer=tokenizer,
                        seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.ft_epochs, accum=args.accum, lr=args.lr / 10)
-        
-    return tokenizer, model
+
+    save_model(args, model, args.n)
+    return history, model
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    tokenizer, model = main(args)
-    save_model(args, model, args.n)
+    history, model = main(args)
+
