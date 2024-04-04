@@ -67,7 +67,7 @@ class TokenClassifier(nn.Module):
         # Focal loss for each element that will be summed
         # self.loss = partial(focal_loss.sigmoid_focal_loss, reduction='sum')
         # BCE Loss with weight 95 for the positive class. In the dataset, the 
-        self.loss = torch.nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor())
+        self.loss = torch.nn.BCEWithLogitsLoss()
         self.dropout = nn.Dropout(dropout)
         if args.rnn:
             self.build_rnn_classifier(args)
