@@ -22,7 +22,7 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('--seed', type=int, help='Random seed', default=42)
 parser.add_argument('--batch_size', type=int, help='Maximum batch size (in number of residues)', default=2048)
-parser.add_argument('--epochs', type=int, help='Number of training epochs', default=1)
+parser.add_argument('--epochs', type=int, help='Number of training epochs', default=20)
 parser.add_argument('--max_length', type=int, help='Maximum sequence length (shorter sequences will be pruned)', default=1024)
 parser.add_argument('--dataset_path', type=str, 
                      help='Path to the protein dataset. Expects a dataframe with columns ("id", "sequence", "sites"). "sequence" is the protein AA string, "sites" is a list of phosphorylation sites.',
