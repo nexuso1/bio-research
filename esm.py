@@ -34,7 +34,7 @@ parser.add_argument('--accum', type=int, help='Number of gradient accumulation s
 parser.add_argument('--rnn', type=bool, help='Use an RNN classification head', default=False)
 parser.add_argument('--val_batch', type=int, help='Validation batch size', default=10)
 parser.add_argument('--hidden_size', type=int, help='Classifier hidden size. Relevant for cnn, rnn and simple classifiers', default=256)
-parser.add_argument('--lr', type=float, help='Learning rate', default=1e-4)
+parser.add_argument('--lr', type=float, help='Learning rate', default=3e-4)
 parser.add_argument('-o', type=str, help='Output folder', default='output')
 parser.add_argument('-n', type=str, help='Model name', default='esm.pt')
 parser.add_argument('--layers', type=str, help='Hidden layers for the linear classifier', default='[1024]')
@@ -341,6 +341,7 @@ def eval_model(model, test_ds, epoch):
     ]
 
     model.eval()
+    progress_bar = tqdm(range(len(test_ds)))
     with torch.no_grad():
         for batch in test_ds:
             batch = {k: v.to(device) for k, v in batch.items()}
@@ -352,9 +353,14 @@ def eval_model(model, test_ds, epoch):
             for metric, _ in metrics:
                 metric.update(target=target.int(), input=preds)
 
+            progress_bar.update(1)
     print(f'Epoch {epoch}:')
+    
+    res = {}
     for metric, name in metrics:
-        print(f'    {name}: {metric.compute().detach().cpu().numpy()}')
+        val = metric.compute().detach().cpu().numpy()
+        print(f'    {name}: {val}')
+        res[name] = val
 
 def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Module, tokenizer,
                 lr, epochs, batch, val_batch, accum, seed=42, deepspeed=None):
@@ -363,8 +369,8 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
     set_seeds(seed)
 
     optim = torch.optim.AdamW(model.parameters(), weight_decay=args.weight_decay)
-    #schedule = torch.optim.lr_scheduler.CyclicLR(optim, gamma=0.99, max_lr=lr, base_lr=lr*0.01, mode='exp_range',cycle_momentum=False)
-    schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, len(train_ds) * epochs)
+    schedule = torch.optim.lr_scheduler.CyclicLR(optim, gamma=0.95, max_lr=lr, base_lr=lr*0.01, mode='exp_range')
+    #schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, len(train_ds) * epochs)
     progress_bar = tqdm(range(len(train_ds) * epochs))
 
     # Train model
@@ -379,7 +385,6 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
                 schedule.step(epoch)
                 optim.zero_grad()
             progress_bar.update(1)
-            break
 
         print(f'Epoch {epoch}, starting evaluation...')
         eval_model(model, test_ds, epoch)
@@ -470,7 +475,7 @@ def main(args):
 
         # Train with a lower learning rate
         tokenizer, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=training_model, tokenizer=tokenizer,
-                       seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.ft_epochs, accum=args.accum, lr=args.lr)
+                       seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.ft_epochs, accum=args.accum, lr=args.lr / 10)
         
     return tokenizer, model
 
