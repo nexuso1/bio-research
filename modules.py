@@ -105,6 +105,7 @@ class Unet1D(torch.nn.Module):
         for i in range(len(self.ups)):
             x = self.ups[i](x, down_outs[i+1])
 
+        x = self.final_conv(x)
         return x
 
 
