@@ -7,6 +7,9 @@ import numpy as np
 import argparse
 import json
 import os
+
+import torch.utils
+import torch.utils.data
 import lora
 import re
 
@@ -17,11 +20,14 @@ from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
 from transformers import set_seed, EsmModel, AutoTokenizer
 from torcheval.metrics import BinaryF1Score, BinaryPrecision, BinaryRecall, BinaryConfusionMatrix
+from modules import Unet1D
+from prot_dataset import ProteinTorchDataset
+from functools import partial
 
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--seed', type=int, help='Random seed', default=42)
-parser.add_argument('--batch_size', type=int, help='Maximum batch size (in number of residues)', default=2048)
+parser.add_argument('--batch_size', type=int, help='Batch size)', default=4)
 parser.add_argument('--epochs', type=int, help='Number of training epochs', default=20)
 parser.add_argument('--max_length', type=int, help='Maximum sequence length (shorter sequences will be pruned)', default=1024)
 parser.add_argument('--dataset_path', type=str, 
@@ -40,8 +46,9 @@ parser.add_argument('-n', type=str, help='Model name', default='esm.pt')
 parser.add_argument('--layers', type=str, help='Hidden layers for the linear classifier', default='[1024]')
 parser.add_argument('--compile', action='store_true', default=False, help='Compile the model')
 parser.add_argument('--lora', action='store_true', help='Use LoRA', default=False)
-parser.add_argument('--cnn', action='store_true', help='Use CNN classifier', default=False)
+parser.add_argument('--cnn', action='store_true', help='Use CNN classifier', default=True)
 parser.add_argument('--mlp', action='store_true', help='Use an MLP classifier', default=False)
+parser.add_argument('--dropout', type=float, help='Dropout probability', default=0)
 parser.add_argument('--ft_epochs', type=int, help='Number of epochs for finetuning', default=10)
 parser.add_argument('--type', help='ESM Model type', type=str, default='650M')
 parser.add_argument('--pos_weight', help='Positive class weight', type=float, default=None)
@@ -58,24 +65,28 @@ class TokenClassifier(nn.Module):
     ignore_index = -100 # Ignore labels with index -100
     token_model = None
 
-    def __init__(self, args, base_model : nn.Module, dropout = 0.2, n_labels = 1, fine_tune=False, use_lora=False) -> None:
+    def __init__(self, args, base_model : nn.Module, n_labels = 1, fine_tune=False, use_lora=False) -> None:
         super(TokenClassifier, self).__init__()
+        # Embedding model
         self.base = base_model
 
         if fine_tune and use_lora:
             self.apply_lora()
         
         self.n_labels = n_labels
+        # Use sequence representations as an input to the classifier
+        self.use_seq_reps = True 
         # Focal loss for each element that will be summed
         # self.loss = partial(focal_loss.sigmoid_focal_loss, reduction='sum')
         # BCE Loss with weight 95 for the positive class. In the dataset, the 
 
+        # Use positive class weights
         pos_weight = None
         if args.pos_weight:
             pos_weight = torch.Tensor([args.pos_weight])
         
         self.loss = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(args.dropout)
         if args.rnn:
             self.build_rnn_classifier(args)
         elif args.cnn:
@@ -118,6 +129,15 @@ class TokenClassifier(nn.Module):
         for p in self.base.parameters():
           p.requires_grad = True
 
+    def build_cnn_classifier(self, args):
+            configs = [
+                Unet1D.LayerConfig(self.base.config.hidden_size, 256, 7, 2, 2),
+                Unet1D.LayerConfig(256, 384, 5, 2, 2),
+                Unet1D.LayerConfig(384, 512, 3, 2, 2),
+                Unet1D.LayerConfig(512, 1024, 3, 2, 2)
+            ]
+            self.classifier = Unet1D(configs, 1)
+            self.use_seq_reps = False
     def build_simple_classifier(self, args):
         self.sequence_rep_head = torch.nn.Sequential(
             torch.nn.Linear(self.base.config.hidden_size, args.hidden_size),
@@ -138,28 +158,6 @@ class TokenClassifier(nn.Module):
             outputs
         )
 
-    def build_cnn_classifier(self, args):
-        layer_conf = [(self.base.config.hidden_size, 128, 1, 1),
-                      (128, 192, 5, 2),
-                      (192, 256, 5, 2),
-                      (256, 512, 3, 1),
-                      ]
-        
-        layers = []
-        for in_channels, out_channels, k, stride in layer_conf:
-            layers.append(torch.nn.Conv1d(in_channels, out_channels, kernel_size=k, stride=stride))
-            layers.append(torch.nn.BatchNorm1d(out_channels))
-            layers.append(torch.nn.ReLU())
-
-        layers.append(torch.nn.AdaptiveAvgPool1d(1))
-
-        self.sequence_rep_head = torch.nn.Linear(self.base.config.hidden_size, args.hidden_size)
-        self.token_model = torch.nn.Sequential(*layers)
-
-        self.classifier = torch.nn.Sequential([
-            torch.nn.Linear(layer_conf[-1][1] + args.hidden_size, 1)
-        ])
-        
     def build_linear_classifier(self, args):
         self.classifier = nn.Sequential(
             nn.Linear(self.base.config.hidden_size, 2048),
@@ -176,14 +174,22 @@ class TokenClassifier(nn.Module):
         for p in self.base.parameters():
           p.requires_grad = False
 
+    def get_sequence_reps(self, sequence_output : torch.Tensor, batch_lens):
+        # NOTE: token 0 is always a beginning-of-sequence token, so the first residue is token 1.
+        sequence_reps = []
+        for i, tokens_len in enumerate(batch_lens):
+            sequence_reps.append(sequence_output[i, 1 : tokens_len + 1].mean(0))
+
+        sequence_reps = torch.vstack(sequence_reps)
+        sequence_reps = self.sequence_rep_head(sequence_reps)
+        return sequence_reps
+        
     def forward(
         self,
         input_ids=None,
         attention_mask=None,
         labels=None,
         batch_lens=None,
-        output_hidden_states=None,
-        return_dict = False,
         training = False, 
         **kwargs
     ):
@@ -198,33 +204,30 @@ class TokenClassifier(nn.Module):
         
         # Last hidden state
         sequence_output = outputs[0] 
-        # Generate per-sequence representations via averaging
-#        NOTE: token 0 is always a beginning-of-sequence token, so the first residue is token 1.
-        sequence_reps = []
-        for i, tokens_len in enumerate(batch_lens):
-            sequence_reps.append(sequence_output[i, 1 : tokens_len + 1].mean(0))
+        if self.use_seq_reps:
+            # Generate per-sequence representations via averaging
+            sequence_reps = self.get_sequence_reps(sequence_output, batch_lens)
 
-        sequence_reps = torch.vstack(sequence_reps)
-        sequence_reps = self.sequence_rep_head(sequence_reps)
         sequence_output = self.dropout(sequence_output)
-        if self.token_model:
+        token_features = sequence_output
+        if self.token_model is not None:
             token_features = self.token_model(sequence_output)
-        else:
-            token_features = sequence_output
 
-        classifier_features = []
-        for i in range(batch_lens.shape[0]):
-            # Broadcast the sequence features to match the 0-th dimension of the corresponding sequence
-            broadcasted_seq_features = sequence_reps[i].unsqueeze(0).broadcast_to(sequence_output[i].shape[0], -1)
+        classifier_features = sequence_output
+        if self.use_seq_reps:
+            classifier_features = []
+            for i in range(batch_lens.shape[0]):
+                # Broadcast the sequence features to match the 0-th dimension of the corresponding sequence
+                broadcasted_seq_features = sequence_reps[i].unsqueeze(0).broadcast_to(sequence_output[i].shape[0], -1)
 
-            # Concatenate the features together, resulting in a tensor of shape 
-            # (sequence_length, base_hidden_size + sequence_feature_dim)
-            catted = torch.cat((token_features[i], broadcasted_seq_features), -1)
+                # Concatenate the features together, resulting in a tensor of shape 
+                # (sequence_length, base_hidden_size + sequence_feature_dim)
+                catted = torch.cat((token_features[i], broadcasted_seq_features), -1)
 
-            classifier_features.append(catted)
-        
-        # Combine the features for every sequence in the batch
-        classifier_features = torch.stack(classifier_features)
+                classifier_features.append(catted)
+
+            # Combine the features for every sequence in the batch
+            classifier_features = torch.stack(classifier_features)
         logits = self.classifier(classifier_features)
         loss = None
 
@@ -242,9 +245,8 @@ class TokenClassifier(nn.Module):
             else:
                 loss = self.loss(logits.view(-1, self.n_labels), labels.view(-1))
 
-        if not return_dict:
-            output = (logits,)
-            return ((loss,) + output) if loss is not None else output
+        output = (logits,)
+        return ((loss,) + output) if loss is not None else output
 
         #return {
             #'loss' : loss,
@@ -438,6 +440,19 @@ def save_model(args, model, name):
     torch.save(model, save_path)
     print(f'Model saved to {save_path}')
 
+def prep_batch(data, tokenizer, ignore_label=-100):
+    """
+    Collate function for a dataloader. "data" is a list of inputs
+    """
+    sequences, labels = zip(*data)
+    batch = tokenizer(sequences, padding='longest', return_tensors="pt")
+    sequence_length = batch["input_ids"].shape[1]
+    batch['labels'] = np.array([[ignore_label] + list(label) + [ignore_label] * (sequence_length - len(label) - 1) for label in labels])
+    batch['labels'] = torch.as_tensor(batch['labels'], dtype=torch.float32)
+    batch['batch_lens'] = torch.as_tensor(np.array([len(x) for x in labels]))
+
+    return batch
+
 def main(args):
     set_seeds(args.seed)
     base, tokenizer = get_esm(args)
@@ -455,10 +470,16 @@ def main(args):
     save_as_string(list(test_prots), test_path)
     print(f'Test prots saved to {test_path}')
     
-    train_dataset = create_dataset(tokenizer=tokenizer, seqs=list(train_df['sequence']), labels=list(train_df['label']),
-                                max_batch_residues=args.batch_size) # Create a huggingface dataset
-    test_dataset = create_dataset(tokenizer=tokenizer, seqs=list(test_df['sequence']), labels=list(test_df['label']), 
-                                max_batch_residues=args.batch_size)
+    # train_dataset = create_dataset(tokenizer=tokenizer, seqs=list(train_df['sequence']), labels=list(train_df['label']),
+    #                             max_batch_residues=args.batch_size) # Create a huggingface dataset
+    # test_dataset = create_dataset(tokenizer=tokenizer, seqs=list(test_df['sequence']), labels=list(test_df['label']), 
+    #                             max_batch_residues=args.batch_size)
+
+    train_dataset = ProteinTorchDataset(train_df)
+    test_dataset = ProteinTorchDataset(test_df)
+
+    train = torch.utils.data.DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer))
+    test = torch.utils.data.DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer))
 
     model = TokenClassifier(args, base, use_lora=False, fine_tune=False)
     if args.compile:
@@ -467,7 +488,7 @@ def main(args):
         training_model = compiled_model
     else:
         training_model = model.to(device)
-    history, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=training_model, tokenizer=tokenizer,
+    history, compiled_model = train_model(args, train_ds=train, test_ds=test, model=training_model, tokenizer=tokenizer,
                        seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.epochs, accum=args.accum, lr=args.lr)
 
     if args.fine_tune:
