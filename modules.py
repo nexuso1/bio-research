@@ -39,7 +39,9 @@ class Up1D(torch.nn.Module):
         self.layers = []
         for _ in range(num_layers-1):
             self.layers.append(ConvNormActiv1D(out_channels, out_channels, kernel_size=kernel_size, padding=(kernel_size - 1) // 2, stride=1))
-
+        
+        # Needed for Torch to see the list of modules as a part of the graph
+        self.layers = torch.nn.ModuleList(self.layers)
     def forward(self, inputs : torch.Tensor, connected : torch.Tensor = None):
         """
         Expects inputs in shape [batch, sequence, channels], 
@@ -62,6 +64,8 @@ class Down1D(torch.nn.Module):
         self.layers = []
         for _ in range(num_layers-1):
             self.layers.append(ConvNormActiv1D(out_channels, out_channels, kernel_size=kernel_size, padding=(kernel_size - 1) // 2, stride=1))
+        # Needed for Torch to see the list of modules as a part of the graph
+        self.layers = torch.nn.ModuleList(self.layers)
 
     def forward(self, inputs : torch.Tensor):
         x = torch.moveaxis(inputs, -1, 1)
@@ -78,13 +82,16 @@ class Unet1D(torch.nn.Module):
         self.downs = []
         for in_channels, out_channels, k, n, s in layer_configs:
             self.downs.append(Down1D(in_channels, out_channels, num_layers=n, kernel_size=k, stride=s))
+        # Needed for Torch to see the list of modules as a part of the graph
+        self.downs = torch.nn.ModuleList(self.downs)
 
         self.ups = []
         for i in range(len(layer_configs) - 2, -1 , -1):
             connected_channels = layer_configs[i].out_channels
             prev_channels = layer_configs[i+1].out_channels
             self.ups.append(Up1D(prev_channels, connected_channels, num_layers=n, kernel_size=k, stride=s))
-
+        
+        self.ups = torch.nn.ModuleList(self.ups)
         self.final_conv = ConvNormActiv1D(layer_configs[-1].out_channels, out_channels, kernel_size=1, padding=0, stride=1)
         
     def forward(self, inputs):
