@@ -138,6 +138,7 @@ class TokenClassifier(nn.Module):
             ]
             self.classifier = Unet1D(configs, 1)
             self.use_seq_reps = False
+
     def build_simple_classifier(self, args):
         self.sequence_rep_head = torch.nn.Sequential(
             torch.nn.Linear(self.base.config.hidden_size, args.hidden_size),
@@ -235,7 +236,7 @@ class TokenClassifier(nn.Module):
             # Only keep active parts of the loss
             if attention_mask is not None:
                 active_loss = attention_mask.view(-1) == 1
-                active_logits = logits.view(-1, self.n_labels)
+                active_logits = logits.rehsape(-1, self.n_labels)
                 active_labels = torch.where(
                     active_loss, labels.view(-1), torch.tensor(self.ignore_index).type_as(labels)
                 )
@@ -447,6 +448,7 @@ def prep_batch(data, tokenizer, ignore_label=-100):
     sequences, labels = zip(*data)
     batch = tokenizer(sequences, padding='longest', return_tensors="pt")
     sequence_length = batch["input_ids"].shape[1]
+    # Pad the labels correctly
     batch['labels'] = np.array([[ignore_label] + list(label) + [ignore_label] * (sequence_length - len(label) - 1) for label in labels])
     batch['labels'] = torch.as_tensor(batch['labels'], dtype=torch.float32)
     batch['batch_lens'] = torch.as_tensor(np.array([len(x) for x in labels]))
@@ -478,8 +480,8 @@ def main(args):
     train_dataset = ProteinTorchDataset(train_df)
     test_dataset = ProteinTorchDataset(test_df)
 
-    train = torch.utils.data.DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer))
-    test = torch.utils.data.DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer))
+    train = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer))
+    test = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer))
 
     model = TokenClassifier(args, base, use_lora=False, fine_tune=False)
     if args.compile:
