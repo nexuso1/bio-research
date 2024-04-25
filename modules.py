@@ -90,7 +90,7 @@ class Unet1D(torch.nn.Module):
             connected_channels = layer_configs[i].out_channels
             prev_channels = layer_configs[i+1].out_channels
             self.ups.append(Up1D(prev_channels, connected_channels, num_layers=n, kernel_size=k, stride=s))
-        
+
         self.ups = torch.nn.ModuleList(self.ups)
         self.final_conv = ConvNormActiv1D(layer_configs[-1].out_channels, out_channels, kernel_size=1, padding=0, stride=1)
         
@@ -104,6 +104,8 @@ class Unet1D(torch.nn.Module):
         down_outs.reverse()
         for i in range(len(self.ups)):
             x = self.ups[i](x, down_outs[i+1])
+
+        return x
 
 
         
