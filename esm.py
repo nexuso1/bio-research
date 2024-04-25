@@ -236,7 +236,7 @@ class TokenClassifier(nn.Module):
             # Only keep active parts of the loss
             if attention_mask is not None:
                 active_loss = attention_mask.view(-1) == 1
-                active_logits = logits.rehsape(-1, self.n_labels)
+                active_logits = logits.reshape(-1, self.n_labels)
                 active_labels = torch.where(
                     active_loss, labels.view(-1), torch.tensor(self.ignore_index).type_as(labels)
                 )
