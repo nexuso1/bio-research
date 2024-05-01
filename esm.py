@@ -46,7 +46,7 @@ parser.add_argument('-n', type=str, help='Model name', default='esm.pt')
 parser.add_argument('--layers', type=str, help='Hidden layers for the linear classifier', default='[1024]')
 parser.add_argument('--compile', action='store_true', default=False, help='Compile the model')
 parser.add_argument('--lora', action='store_true', help='Use LoRA', default=False)
-parser.add_argument('--cnn_sr', action='store_true', help='Use CNN sequence representation', default=False)
+parser.add_argument('--cnn_sr', action='store_true', help='Use CNN sequence representation', default=True)
 parser.add_argument('--sr_dim', type=int, help='Sequence representation dim', default=1024)
 parser.add_argument('--mlp', action='store_true', help='Use an MLP classifier', default=False)
 parser.add_argument('--dropout', type=float, help='Dropout probability', default=0)
@@ -171,7 +171,8 @@ class TokenClassifier(nn.Module):
         self.init_weights(self.classifier)
 
     def build_rnn_classifier(self, args):
-        self.classifier = RNNClassifier(self.base.config.hidden_size * 2, self.n_labels, args.hidden_size, args.rnn_layers)
+        seq_rep_dim = args.sr_dim if args.cnn_sr else self.base.config.hidden_size
+        self.classifier = RNNClassifier(self.base.config.hidden_size + seq_rep_dim, self.n_labels, args.hidden_size, args.rnn_layers)
         # self.classifier_requires_lens = True
         self.init_weights(self.classifier)
 
@@ -194,7 +195,7 @@ class TokenClassifier(nn.Module):
     def append_seq_reps(self, sequence_output, seq_reps):
         seq_reps = seq_reps.unsqueeze(1) # (B, 1, SR_DIM)
         # Repeat the means for every sequence element (i.e. sequence length-times),
-        seq_reps= seq_reps.expand_as(sequence_output) # (B, S, SR_DIM)
+        seq_reps= seq_reps.expand(-1, sequence_output.shape[1], -1) # (B, S, SR_DIM)
 
         return torch.cat([sequence_output, seq_reps], -1) # (B, S, CH + SR_DIM)
 
