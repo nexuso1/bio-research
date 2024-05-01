@@ -244,7 +244,7 @@ class TokenClassifier(nn.Module):
                 sequence_reps = self.sr_model(classifier_features)
                 classifier_features = self.append_seq_reps(classifier_features, sequence_reps)
             else:
-                classifier_features = self.get_mean_sequence_reps(classifier_features, torch.sum(attention_mask, -1).cpu())
+                classifier_features = self.get_mean_sequence_reps(classifier_features, torch.sum(attention_mask, -1).to(device))
         
         if self.classifier_requires_lens:
             logits = self.classifier(classifier_features, torch.sum(attention_mask, -1).cpu())
