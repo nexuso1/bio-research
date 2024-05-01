@@ -218,7 +218,7 @@ class TokenClassifier(nn.Module):
             classifier_features = self.get_sequence_reps(classifier_features, batch_lens)
         
         if self.classifier_requires_lens:
-            logits = self.classifier(classifier_features, torch.sum(attention_mask, -1, device='cpu'))
+            logits = self.classifier(classifier_features, torch.sum(attention_mask, -1, device=torch.device('cpu')))
         else:
             logits = self.classifier(classifier_features)
         loss = None
