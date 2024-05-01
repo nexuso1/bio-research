@@ -52,8 +52,8 @@ parser.add_argument('--dropout', type=float, help='Dropout probability', default
 parser.add_argument('--ft_epochs', type=int, help='Number of epochs for finetuning', default=10)
 parser.add_argument('--type', help='ESM Model type', type=str, default='650M')
 parser.add_argument('--pos_weight', help='Positive class weight', type=float, default=0.98)
-parser.add_argument('--num_workers', help='Number of multiprocessign workers', default=0)
-parser.add_argument('--rnn_layers', help='Number of RNN classifier layers', default=2)
+parser.add_argument('--num_workers', help='Number of multiprocessign workers', type=int, default=0)
+parser.add_argument('--rnn_layers', help='Number of RNN classifier layers', type=int, default=2)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
