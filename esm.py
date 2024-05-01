@@ -411,6 +411,7 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
                     for k, v in logs.items()
                 ]
             data_and_progress.set_description(" ".join(message))
+            data_and_progress.update(1)
 
         print(f'Epoch {epoch}, starting evaluation...')
         metrics = eval_model(model, test_ds, epoch, metrics)
