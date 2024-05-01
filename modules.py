@@ -1,4 +1,5 @@
 import torch
+import torch.utils
 import torchvision
 from collections import namedtuple
 
@@ -28,14 +29,26 @@ class ConvNormActiv1D(torch.nn.Module):
 
     def forward(self, inputs : torch.Tensor):
         x = self.conv(inputs)
-        x = self.norm(inputs)
+        x = self.norm(x)
+        return self.activ(x)
+    
+class TransposeConvNormActiv1D(torch.nn.Module):
+    def __init__(self, in_channels : int, out_channels : int, kernel_size : int, stride : int, padding : int) -> None:
+        super().__init__()
+        self.conv = torch.nn.ConvTranspose1d(in_channels, out_channels, kernel_size=kernel_size, padding=padding, stride=stride)
+        self.norm = torch.nn.BatchNorm1d(out_channels)
+        self.activ = torch.nn.ReLU()
+
+    def forward(self, inputs : torch.Tensor):
+        x = self.conv(inputs)
+        x = self.norm(x)
         return self.activ(x)
 
 class Up1D(torch.nn.Module):
     def __init__(self, in_channels : int, out_channels : int, num_layers : int = 3, kernel_size : int = 3, stride : int = 2):
         super().__init__()
-        self.up = torch.nn.ConvTranspose1d(in_channels, out_channels, kernel_size=2, stride=stride, 
-                                           padding=(kernel_size - 1) // 2)
+        self.up = TransposeConvNormActiv1D(in_channels, out_channels, kernel_size=2, stride=stride, 
+                                           padding=1)
         self.layers = []
         for _ in range(num_layers-1):
             self.layers.append(ConvNormActiv1D(out_channels, out_channels, kernel_size=kernel_size, padding=(kernel_size - 1) // 2, stride=1))
@@ -50,7 +63,7 @@ class Up1D(torch.nn.Module):
         x = self.up(x)
         if connected is not None:
             connected = torch.moveaxis(connected, -1, 1)
-            x = torch.cat([connected, x], -1)
+            x = torch.cat([connected, x], 1)
         x = self.layers[0](x)
         for i in range(1, len(self.layers)):
             x = x + self.layers[i](x) # Residual connection
@@ -59,8 +72,8 @@ class Up1D(torch.nn.Module):
 class Down1D(torch.nn.Module):
     def __init__(self, in_channels, out_channels, num_layers=3, kernel_size=3, stride=2) -> None:
         super().__init__()
-        self.down = torch.nn.Conv1d(in_channels, out_channels, kernel_size=2, stride=stride, 
-                                    padding=(kernel_size - 1) // 2)
+        self.down = ConvNormActiv1D(in_channels, out_channels, kernel_size=2, stride=stride, 
+                                    padding=1)
         self.layers = []
         for _ in range(num_layers-1):
             self.layers.append(ConvNormActiv1D(out_channels, out_channels, kernel_size=kernel_size, padding=(kernel_size - 1) // 2, stride=1))
@@ -75,9 +88,25 @@ class Down1D(torch.nn.Module):
             x = x + self.layers[i](x) # Residual connection
         return torch.moveaxis(x, 1, -1)
     
+
+class RNNClassifier(torch.nn.Module):
+    def __init__(self, input_dim : int, output_dim : int, hidden_size : int, num_layers : int) -> None:
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.lstm = torch.nn.LSTM(input_dim, hidden_size=hidden_size, bidirectional=True, batch_first=True,
+                                  num_layers=num_layers)
+        self.outputs = torch.nn.Linear(hidden_size, output_dim)
+
+    def forward(self, inputs : torch.Tensor, lengths : torch.Tensor):
+        packed = torch.nn.utils.rnn.pack_padded_sequence(inputs, lengths.cpu(), batch_first=True, enforce_sorted=False)
+        x, _ = self.lstm(packed)
+        x, _ = torch.nn.utils.rnn.pad_packed_sequence(x, batch_first=True)
+        x = x[..., :self.hidden_size] + x[..., self.hidden_size:]
+        return self.outputs(x)
+
 class Unet1D(torch.nn.Module):
     LayerConfig = namedtuple('LayerConfig', 'in_channels, out_channels, kernel_size, num_layers, stride')
-    def __init__(self, layer_configs : list[LayerConfig], out_channels) -> None:
+    def __init__(self, layer_configs : list[LayerConfig], out_dim : int) -> None:
         super().__init__()
         self.downs = []
         for in_channels, out_channels, k, n, s in layer_configs:
@@ -92,7 +121,7 @@ class Unet1D(torch.nn.Module):
             self.ups.append(Up1D(prev_channels, connected_channels, num_layers=n, kernel_size=k, stride=s))
 
         self.ups = torch.nn.ModuleList(self.ups)
-        self.final_conv = ConvNormActiv1D(layer_configs[-1].out_channels, out_channels, kernel_size=1, padding=0, stride=1)
+        self.final_conv = torch.nn.Conv1d(layer_configs[0].out_channels, out_dim, kernel_size=1, padding=0, stride=1)
         
     def forward(self, inputs):
         down_outs = []
@@ -105,8 +134,8 @@ class Unet1D(torch.nn.Module):
         for i in range(len(self.ups)):
             x = self.ups[i](x, down_outs[i+1])
 
-        x = self.final_conv(x)
-        return x
+        x = self.final_conv(torch.moveaxis(x, -1, 1))
+        return torch.moveaxis(x, 1, -1)
 
 
         
