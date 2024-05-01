@@ -176,9 +176,9 @@ class TokenClassifier(nn.Module):
 
     def get_sequence_reps(self, sequence_output : torch.Tensor, batch_lens):
         # NOTE: token 0 is always a beginning-of-sequence token, so the first residue is token 1.
-        pad_mask = torch.arange(0, sequence_output.shape[0])[:, None, None].expand_as(sequence_output)
+        pad_mask = torch.arange(0, sequence_output.shape[0], device=device)[:, None, None].expand_as(sequence_output)
         lens_reshaped = batch_lens[:, None, None].expand_as(pad_mask)
-        pad_mask = pad_mask > lens_reshaped.to(device) # True if a given position is padding
+        pad_mask = pad_mask > lens_reshaped # True if a given position is padding
         # Zero the padding values
         sequence_output[pad_mask] = 0
         # Calculate the sequence means
