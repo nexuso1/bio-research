@@ -150,7 +150,7 @@ class Conv1dModel(torch.nn.Module):
         for in_channels, out_channels, k, n, s in layer_configs:
             self.downs.append(Down1D(in_channels, out_channels, num_layers=n, kernel_size=k, stride=s))
         self.downs = torch.nn.ModuleList(self.downs)
-
+        self.pool = torch.nn.MaxPool1d(1)
     def forward(self, inputs):
         down_outs = []
         x = self.downs[0](inputs)
@@ -158,4 +158,5 @@ class Conv1dModel(torch.nn.Module):
         for d in self.downs[1:]:
             x = d(x)
 
+        x = self.pool(torch.moveaxis(x, -1, 1))
         return torch.moveaxis(x, 1, -1)
