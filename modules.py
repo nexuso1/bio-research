@@ -149,6 +149,7 @@ class Conv1dModel(torch.nn.Module):
         self.downs = []
         for in_channels, out_channels, k, n, s in layer_configs:
             self.downs.append(Down1D(in_channels, out_channels, num_layers=n, kernel_size=k, stride=s))
+        self.downs = torch.nn.ModuleList(self.downs)
 
     def forward(self, inputs):
         down_outs = []
