@@ -152,9 +152,7 @@ class Conv1dModel(torch.nn.Module):
         self.downs = torch.nn.ModuleList(self.downs)
         self.pool = torch.nn.MaxPool1d(1)
     def forward(self, inputs):
-        down_outs = []
         x = self.downs[0](inputs)
-        down_outs.append(x)
         for d in self.downs[1:]:
             x = d(x)
 
