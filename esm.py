@@ -336,7 +336,7 @@ def get_train_test_prots(clusters, train_clusters, test_clusters):
 def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
     model.eval()
     metrics.reset()
-    loss_metric =  torchmetrics.MeanMetric()
+    loss_metric =  torchmetrics.MeanMetric().to(device)
     epoch_message = f"Epoch={epoch+1}"
     progress_bar = tqdm(range(len(test_ds)))
     with torch.no_grad():
@@ -374,9 +374,9 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
 
 
     metrics = {
-        'f1' : torchmetrics.F1Score(task='binary', ignore_index=-100),
-        'precision' : torchmetrics.Precision(task='binary',ignore_index=-100),
-        'recall' : torchmetrics.Recall(task='binary', ignore_index=-100)
+        'f1' : torchmetrics.F1Score(task='binary', ignore_index=-100).to(device),
+        'precision' : torchmetrics.Precision(task='binary',ignore_index=-100).to(device),
+        'recall' : torchmetrics.Recall(task='binary', ignore_index=-100).to(device)
     }
     loss_metric =  torchmetrics.MeanMetric()
     metrics = torchmetrics.MetricCollection(metrics)
