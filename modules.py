@@ -98,7 +98,9 @@ class RNNClassifier(torch.nn.Module):
         self.outputs = torch.nn.Linear(hidden_size, output_dim)
 
     def forward(self, inputs : torch.Tensor, lengths : torch.Tensor):
-        lengths = lengths.cpu().to(torch.int64)
+        lengths = lengths.to(torch.int64).cpu()
+        print(lengths.device)
+        print(lengths.dtype)
         packed = torch.nn.utils.rnn.pack_padded_sequence(inputs, lengths,
                                                         batch_first=True, enforce_sorted=False)
         x, _ = self.lstm(packed)
