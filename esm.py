@@ -20,7 +20,6 @@ from datasets import Dataset
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
 from transformers import set_seed, EsmModel, AutoTokenizer
-from torcheval.metrics import BinaryF1Score, BinaryPrecision, BinaryRecall, BinaryConfusionMatrix
 from modules import Unet1D, RNNClassifier
 from prot_dataset import ProteinTorchDataset
 from functools import partial
@@ -52,7 +51,7 @@ parser.add_argument('--mlp', action='store_true', help='Use an MLP classifier', 
 parser.add_argument('--dropout', type=float, help='Dropout probability', default=0)
 parser.add_argument('--ft_epochs', type=int, help='Number of epochs for finetuning', default=10)
 parser.add_argument('--type', help='ESM Model type', type=str, default='650M')
-parser.add_argument('--pos_weight', help='Positive class weight', type=float, default=None)
+parser.add_argument('--pos_weight', help='Positive class weight', type=float, default=0.98)
 parser.add_argument('--num_workers', help='Number of multiprocessign workers', default=0)
 parser.add_argument('--rnn_layers', help='Number of RNN classifier layers', default=2)
 
@@ -334,37 +333,32 @@ def get_train_test_prots(clusters, train_clusters, test_clusters):
     test_prots = clusters['cluster_mem'][test_mask]
     return set(train_prots), set(test_prots)
 
-def eval_model(model, test_ds, epoch):
-    metrics = [
-        (BinaryF1Score(threshold=0.5, device=device), 'f1'),
-        (BinaryPrecision(threshold=0.5, device=device), 'precision'),
-        (BinaryRecall(threshold=0.5, device=device), 'recall'),
-        (BinaryConfusionMatrix(threshold=0.5, device=device), 'confusion matrix')
-    ]
-
+def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
     model.eval()
+    metrics.reset()
+    loss_metric =  torchmetrics.MeanMetric()
+    epoch_message = f"Epoch={epoch+1}"
     progress_bar = tqdm(range(len(test_ds)))
     with torch.no_grad():
         for batch in test_ds:
             batch = {k: v.to(device) for k, v in batch.items()}
             # Model returns a tuple, logits are the first element when not given labels
-            preds = model(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'], batch_lens=batch['batch_lens'])
+            loss, logits = model(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'], batch_lens=batch['batch_lens'])
             mask = batch['labels'].view(-1) != -100
             preds = torch.sigmoid(preds[0].view(-1)[mask])
             target = batch['labels'].view(-1)[mask]
             for metric, _ in metrics:
                 metric.update(target=target.int(), input=preds)
+            logs = compute_metrics(logits, batch['labels'], metrics)
+            loss_metric.update(loss)
+            logs['loss'] = loss_metric.compute()
+            message = [epoch_message] + [
+                f"dev_{k}={v:.{0<abs(v)<2e-4 and '3g' or '4f'}}"
+                for k, v in logs.items()
+            ]
+            progress_bar.set_description(" ".join(message))
 
-            progress_bar.update(1)
-    print(f'Epoch {epoch}:')
-    
-    res = {}
-    for metric, name in metrics:
-        val = metric.compute().detach().cpu().numpy()
-        print(f'    {name}: {val}')
-        res[name] = val
-
-    return res
+    return logs
 
 def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Module, tokenizer,
                 lr, epochs, batch, val_batch, accum, seed=42, deepspeed=None):
@@ -419,7 +413,7 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
             data_and_progress.set_description(" ".join(message))
 
         print(f'Epoch {epoch}, starting evaluation...')
-        metrics = eval_model(model, test_ds, epoch)
+        metrics = eval_model(model, test_ds, epoch, metrics)
         history.append(metrics)
     return history, model
 
