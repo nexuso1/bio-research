@@ -20,7 +20,7 @@ from datasets import Dataset
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
 from transformers import set_seed, EsmModel, AutoTokenizer
-from modules import Unet1D, RNNClassifier
+from modules import Unet1D, RNNClassifier, Conv1dModel
 from prot_dataset import ProteinTorchDataset
 from functools import partial
 
@@ -46,7 +46,8 @@ parser.add_argument('-n', type=str, help='Model name', default='esm.pt')
 parser.add_argument('--layers', type=str, help='Hidden layers for the linear classifier', default='[1024]')
 parser.add_argument('--compile', action='store_true', default=False, help='Compile the model')
 parser.add_argument('--lora', action='store_true', help='Use LoRA', default=False)
-parser.add_argument('--cnn', action='store_true', help='Use CNN classifier', default=False)
+parser.add_argument('--cnn_sr', action='store_true', help='Use CNN sequence representation', default=False)
+parser.add_argument('--sr_dim', type=int, help='Sequence representation dim', default=1024)
 parser.add_argument('--mlp', action='store_true', help='Use an MLP classifier', default=False)
 parser.add_argument('--dropout', type=float, help='Dropout probability', default=0)
 parser.add_argument('--ft_epochs', type=int, help='Number of epochs for finetuning', default=10)
@@ -77,7 +78,8 @@ class TokenClassifier(nn.Module):
         
         self.n_labels = n_labels
         # Use sequence representations as an input to the classifier
-        self.use_seq_reps = True 
+        self.use_seq_reps = True
+        self.cnn_seq_reps = args.cnn_sr 
         # Focal loss for each element that will be summed
         # self.loss = partial(focal_loss.sigmoid_focal_loss, reduction='sum')
         # BCE Loss with weight 95 for the positive class. In the dataset, the 
@@ -98,6 +100,9 @@ class TokenClassifier(nn.Module):
             self.build_linear_classifier(args)
         else:
             self.build_simple_classifier(args)
+
+        if args.cnn_sr:
+            self.build_cnn_seq_rep(args)
 
         if not fine_tune:
             # Freeze base model parameters
@@ -133,14 +138,26 @@ class TokenClassifier(nn.Module):
           p.requires_grad = True
 
     def build_cnn_classifier(self, args):
-            configs = [
-                Unet1D.LayerConfig(self.base.config.hidden_size, 256, 7, 2, 2),
-                Unet1D.LayerConfig(256, 384, 5, 2, 2),
-                Unet1D.LayerConfig(384, 512, 3, 2, 2),
-                Unet1D.LayerConfig(512, 1024, 3, 2, 2)
+        configs = [
+            Unet1D.LayerConfig(self.base.config.hidden_size, 256, 7, 2, 2),
+            Unet1D.LayerConfig(256, 384, 5, 2, 2),
+            Unet1D.LayerConfig(384, 512, 3, 2, 2),
+            Unet1D.LayerConfig(512, 1024, 3, 2, 2)
+        ]
+        self.classifier = Unet1D(configs, 1)
+        self.use_seq_reps = False
+        self.init_weights(self.classifier)
+
+    def build_cnn_seq_rep(self, args):
+        configs = [
+                Conv1dModel.LayerConfig(self.base.config.hidden_size, 256, 7, 2, 2),
+                Conv1dModel.LayerConfig(256, 384, 5, 2, 2),
+                Conv1dModel.LayerConfig(384, 512, 3, 2, 2),
+                Conv1dModel.LayerConfig(512, args.sr_dim, 3, 2, 2)
             ]
-            self.classifier = Unet1D(configs, 1)
-            self.use_seq_reps = False
+        self.sr_model = Conv1dModel(configs, args.sr_dim)
+        self.cnn_seq_reps = True
+        self.init_weights(self.sr_model)
 
     def build_simple_classifier(self, args):
         self.sequence_rep_head = torch.nn.Sequential(
@@ -155,7 +172,7 @@ class TokenClassifier(nn.Module):
 
     def build_rnn_classifier(self, args):
         self.classifier = RNNClassifier(self.base.config.hidden_size * 2, self.n_labels, args.hidden_size, args.rnn_layers)
-        self.classifier_requires_lens = True
+        # self.classifier_requires_lens = True
         self.init_weights(self.classifier)
 
     def build_linear_classifier(self, args):
@@ -174,7 +191,14 @@ class TokenClassifier(nn.Module):
         for p in self.base.parameters():
           p.requires_grad = False
 
-    def get_sequence_reps(self, sequence_output : torch.Tensor, batch_lens):
+    def append_seq_reps(self, sequence_output, seq_reps):
+        seq_reps = seq_reps.unsqueeze(1) # (B, 1, SR_DIM)
+        # Repeat the means for every sequence element (i.e. sequence length-times),
+        seq_reps= seq_reps.expand_as(sequence_output) # (B, S, SR_DIM)
+
+        return torch.cat([sequence_output, seq_reps], -1) # (B, S, CH + SR_DIM)
+
+    def get_mean_sequence_reps(self, sequence_output : torch.Tensor, batch_lens):
         # NOTE: token 0 is always a beginning-of-sequence token, so the first residue is token 1.
         pad_mask = torch.arange(0, sequence_output.shape[0], device=device)[:, None, None].expand_as(sequence_output)
         lens_reshaped = batch_lens[:, None, None].expand_as(pad_mask)
@@ -215,7 +239,11 @@ class TokenClassifier(nn.Module):
 
         classifier_features = sequence_output
         if self.use_seq_reps:
-            classifier_features = self.get_sequence_reps(classifier_features, batch_lens)
+            if self.cnn_seq_reps:
+                sequence_reps = self.sr_model(classifier_features)
+                classifier_features = self.append_seq_reps(classifier_features, sequence_reps)
+            else:
+                classifier_features = self.get_mean_sequence_reps(classifier_features, batch_lens)
         
         if self.classifier_requires_lens:
             logits = self.classifier(classifier_features, torch.sum(attention_mask, -1).cpu())
