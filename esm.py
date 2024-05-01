@@ -378,7 +378,7 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
         'precision' : torchmetrics.Precision(task='binary',ignore_index=-100).to(device),
         'recall' : torchmetrics.Recall(task='binary', ignore_index=-100).to(device)
     }
-    loss_metric =  torchmetrics.MeanMetric()
+    loss_metric =  torchmetrics.MeanMetric().to(device)
     metrics = torchmetrics.MetricCollection(metrics)
 
     history = []
