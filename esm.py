@@ -46,7 +46,7 @@ parser.add_argument('-n', type=str, help='Model name', default='esm.pt')
 parser.add_argument('--layers', type=str, help='Hidden layers for the linear classifier', default='[1024]')
 parser.add_argument('--compile', action='store_true', default=False, help='Compile the model')
 parser.add_argument('--lora', action='store_true', help='Use LoRA', default=False)
-parser.add_argument('--cnn_sr', action='store_true', help='Use CNN sequence representation', default=True)
+parser.add_argument('--cnn_sr', action='store_true', help='Use CNN sequence representation', default=False)
 parser.add_argument('--sr_dim', type=int, help='Sequence representation dim', default=1024)
 parser.add_argument('--mlp', action='store_true', help='Use an MLP classifier', default=False)
 parser.add_argument('--dropout', type=float, help='Dropout probability', default=0)
@@ -173,7 +173,7 @@ class TokenClassifier(nn.Module):
     def build_rnn_classifier(self, args):
         seq_rep_dim = args.sr_dim if args.cnn_sr else self.base.config.hidden_size
         self.classifier = RNNClassifier(self.base.config.hidden_size + seq_rep_dim, self.n_labels, args.hidden_size, args.rnn_layers)
-        # self.classifier_requires_lens = True
+        self.classifier_requires_lens = True
         self.init_weights(self.classifier)
 
     def build_linear_classifier(self, args):
@@ -244,7 +244,7 @@ class TokenClassifier(nn.Module):
                 sequence_reps = self.sr_model(classifier_features)
                 classifier_features = self.append_seq_reps(classifier_features, sequence_reps)
             else:
-                classifier_features = self.get_mean_sequence_reps(classifier_features, batch_lens)
+                classifier_features = self.get_mean_sequence_reps(classifier_features, torch.sum(attention_mask, -1).cpu())
         
         if self.classifier_requires_lens:
             logits = self.classifier(classifier_features, torch.sum(attention_mask, -1).cpu())

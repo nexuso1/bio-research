@@ -96,16 +96,14 @@ class RNNClassifier(torch.nn.Module):
                                   num_layers=num_layers)
         self.outputs = torch.nn.Linear(hidden_size, output_dim)
 
-    def forward(self, inputs : torch.Tensor):
+    def forward(self, inputs : torch.Tensor, lengths):
         # For some reason, after calling pack_padded_sequence, lengths get put back to the gpu 
         # even though they were at cpu before, and the function throws an error. Seems to only happend
         # with torch dynamo. So do not use for now
-        # lengths = torch.as_tensor(lengths, dtype=torch.int64, device=torch.device('cpu'))
-        # print(lengths.device)
-        # print(lengths.dtype)
-        # packed = torch.nn.utils.rnn.pack_padded_sequence(inputs, lengths,
-        #                                                 batch_first=True, enforce_sorted=False)
-        x, _ = self.lstm(inputs)
+        packed = torch.nn.utils.rnn.pack_padded_sequence(inputs, lengths.cpu(),
+                                                        batch_first=True, enforce_sorted=False)
+        x, _ = self.lstm(packed)
+        x, _ = torch.nn.utils.rnn.pad_packed_sequence(x, batch_first=True)
         x = x[..., :self.hidden_size] + x[..., self.hidden_size:]
         return self.outputs(x)
 
