@@ -436,16 +436,14 @@ def resume_training(args, train_ds, test_ds, model, current_epoch, optim):
         history.append(metrics)
     return history, model
 
-def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Module,
-                epochs, batch, accum, seed=42):
+def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Module, lr, seed=42):
 
     # Set all random seeds
     set_seeds(seed)
 
-    optim = torch.optim.AdamW(model.parameters(), weight_decay=args.weight_decay)
+    optim = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=args.weight_decay)
     # Cycle momentum not available with adam
-    schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, args.lr)
-    #schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, len(train_ds) * epochs)
+    schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, len(train_ds) * args.epochs)
 
 
     metrics = {
@@ -458,10 +456,10 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
 
     history = []
     # Train model
-    for epoch in range(epochs):
+    for epoch in range(args.epochs):
         model.train()
         metrics.reset()
-        epoch_message = f"Epoch={epoch+1}/{epochs}"
+        epoch_message = f"Epoch={epoch+1}/{args.epochs}"
         # Progress bar
         data_and_progress = tqdm(
             train_ds,
@@ -472,7 +470,7 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
         for i, batch in enumerate(train_ds):
             batch = {k: v.to(device) for k, v in batch.items()}
             loss, logits = model(training=True, **batch)
-            if accum == 1 or ( i > 0 and i % accum == 0):
+            if args.accum == 1 or ( i > 0 and i % args.accum == 0):
                 loss.backward()
                 optim.step()
                 schedule.step(epoch)
@@ -647,8 +645,7 @@ def main(args):
         training_model = compiled_model
     else:
         training_model = model.to(device)
-    history, compiled_model = train_model(args, train_ds=train, test_ds=test, model=training_model,
-                       seed=args.seed, batch=args.batch_size, epochs=args.epochs, accum=args.accum, lr=args.lr)
+    history, compiled_model = train_model(args, train_ds=train, test_ds=test, model=training_model, seed=args.seed, lr=args.lr)
 
     if args.fine_tune:
         save_model(args, model, f'{args.n}_pre_ft')
@@ -668,7 +665,7 @@ def main(args):
 
         # Train with a lower learning rate
         ft_history, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=training_model,
-                       seed=args.seed, batch=args.batch_size, epochs=args.ft_epochs, accum=args.accum, lr=args.lr / 10)
+                       seed=args.seed, lr=args.lr / 10)
 
     save_model(args, model, args.n)
     return history, model
