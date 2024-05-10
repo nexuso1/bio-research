@@ -32,6 +32,10 @@ def preprocess_data(df : pd.DataFrame):
     return df
 
 def load_prot_data(dataset_path):
+    """
+    Loads the protein dataset and creates label vectors according to the 'sites' column, 
+    stored in a new column 'label'. Returns a dataframe with columns 'id', 'sequence' and 'label'
+    """
     df = pd.read_json(dataset_path)
     df = df.dropna()
     df['sites'] = df['sites'].apply(lambda x: [eval(i) - 1 for i in x])
@@ -104,6 +108,9 @@ def load_phospho_epsd(path : str):
     return res
 
 def remove_long_sequences(df, max_length):
+    """
+    Remove sequences longer than 'max_length' from the dataframe. Expects a column 'sequence'.
+    """
     mask = df['sequence'].apply(lambda x: len(x) < max_length)
     return df[mask]
 
@@ -114,14 +121,6 @@ class ProteinDataset(Dataset):
                  verbose = 1
                  ) -> None:
         
-        # Take input from given arrays
-        if verbose > 0:
-            if inputs is None:
-                
-                print('Warning: No input path given and the inputs parameter is None')
-            
-            if targets is None:
-                print('Warning: No targets given and the targets parameter is None')
 
         self.x = inputs
         self.y = targets
@@ -174,7 +173,7 @@ class ProteinDataset(Dataset):
         prepped = np.array(self.x.apply(self.prep_seq), dtype=np.int32)
         tokenized = self.tokenizer(prepped)
         targets = [self.prep_target(tokenized.iloc[i], self.y.iloc[i]) for i in range(self.y.shape[0])]
-        self.data = tokenized
+        self.input_ids = tokenized['input_ids']
         self.targets = targets
 
     def prep_target(self, enc, target):
@@ -205,3 +204,12 @@ class ProteinDataset(Dataset):
 
     def __len__(self):
         return self.x.shape[0]
+
+class Metadata:
+    def __init__(self) -> None:
+        self.data = {}
+
+    def save(self, dir : str):
+        os.makedirs(dir, exist_ok=True)
+        with open(os.path.join(dir, 'metadata.json'), 'w') as f:
+            json.dump(self, f)
