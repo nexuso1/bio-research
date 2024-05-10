@@ -13,9 +13,10 @@ import torch.utils.data
 import lora
 import re
 import torchmetrics
+import datetime
 
 from tqdm.auto import tqdm
-from utils import remove_long_sequences, load_prot_data
+from utils import remove_long_sequences, load_prot_data, Metadata
 from datasets import Dataset
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
@@ -41,7 +42,7 @@ parser.add_argument('--rnn', type=bool, help='Use an RNN classification head', d
 parser.add_argument('--val_batch', type=int, help='Validation batch size', default=10)
 parser.add_argument('--hidden_size', type=int, help='Classifier hidden size. Relevant for cnn, rnn and simple classifiers', default=256)
 parser.add_argument('--lr', type=float, help='Learning rate', default=3e-4)
-parser.add_argument('-o', type=str, help='Output folder', default='output')
+parser.add_argument('-o', type=str, help='Output folder', default=None)
 parser.add_argument('-n', type=str, help='Model name', default='esm.pt')
 parser.add_argument('--layers', type=str, help='Hidden layers for the linear classifier', default='[1024]')
 parser.add_argument('--compile', action='store_true', default=False, help='Compile the model')
@@ -55,6 +56,7 @@ parser.add_argument('--type', help='ESM Model type', type=str, default='650M')
 parser.add_argument('--pos_weight', help='Positive class weight', type=float, default=0.98)
 parser.add_argument('--num_workers', help='Number of multiprocessign workers', type=int, default=0)
 parser.add_argument('--rnn_layers', help='Number of RNN classifier layers', type=int, default=2)
+parser.add_argument('--checkpoint_path', help='Resume training from checkpoint', type=str, default=None)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -389,16 +391,60 @@ def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
 
     return logs
 
-def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Module, tokenizer,
-                lr, epochs, batch, val_batch, accum, seed=42, deepspeed=None):
+def resume_training(args, train_ds, test_ds, model, current_epoch, optim):
+    metrics = {
+        'f1' : torchmetrics.F1Score(task='binary', ignore_index=-100).to(device),
+        'precision' : torchmetrics.Precision(task='binary',ignore_index=-100).to(device),
+        'recall' : torchmetrics.Recall(task='binary', ignore_index=-100).to(device)
+    }
+    loss_metric =  torchmetrics.MeanMetric().to(device)
+    metrics = torchmetrics.MetricCollection(metrics)
+    schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, args.lr)
+    history = []
+    for epoch in range(current_epoch, args.epochs):
+        model.train()
+        metrics.reset()
+        epoch_message = f"Epoch={epoch+1}/{args.epochs}"
+        # Progress bar
+        data_and_progress = tqdm(
+            train_ds,
+            epoch_message,
+            unit="batch",
+            leave=False,
+        )
+        for i, batch in enumerate(train_ds):
+            batch = {k: v.to(device) for k, v in batch.items()}
+            loss, logits = model(training=True, **batch)
+            if args.accum == 1 or ( i > 0 and i % args.accum == 0):
+                loss.backward()
+                optim.step()
+                schedule.step(epoch)
+                optim.zero_grad()
+                # Metrics logging
+                logs = compute_metrics(logits, batch['labels'], metrics)
+                loss_metric.update(loss)
+                logs['loss'] = loss_metric.compute()
+                message = [epoch_message] + [
+                    f"{k}={v:.{0<abs(v)<2e-4 and '3g' or '4f'}}"
+                    for k, v in logs.items()
+                ]
+            data_and_progress.set_description(" ".join(message))
+            data_and_progress.update(1)
+
+        print(f'Epoch {epoch}, starting evaluation...')
+        metrics = eval_model(model, test_ds, epoch, metrics)
+        history.append(metrics)
+    return history, model
+
+def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Module,
+                epochs, batch, accum, seed=42):
 
     # Set all random seeds
     set_seeds(seed)
 
     optim = torch.optim.AdamW(model.parameters(), weight_decay=args.weight_decay)
     # Cycle momentum not available with adam
-    schedule = torch.optim.lr_scheduler.CyclicLR(optim, gamma=0.99, max_lr=lr, base_lr=lr*0.01,
-                                                  mode='exp_range',cycle_momentum=False)
+    schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, args.lr)
     #schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, len(train_ds) * epochs)
 
 
@@ -442,6 +488,7 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
             data_and_progress.set_description(" ".join(message))
             data_and_progress.update(1)
 
+        save_checkpoint(args, model, optim, )
         print(f'Epoch {epoch}, starting evaluation...')
         metrics = eval_model(model, test_ds, epoch, metrics)
         history.append(metrics)
@@ -474,17 +521,62 @@ def save_as_string(obj, path):
     with open(path, 'w') as f:
         json.dump(obj, f)
 
+def save_checkpoint(args, model : TokenClassifier, optim : torch.optim.Optimizer,
+                    epoch : int, loss, path, metadata  : Metadata = None):
+    """
+    Saves model checkpoint during training. Path should include the filename.
+    """
+    os.makedirs(path, exist_ok=True)
+    torch.save({
+    'optimizer_state_dict': optim.state_dict(),
+    'model_state_dict': model.state_dict(),
+    'args' : args,
+    'epoch' : epoch,
+    'loss' : loss 
+    }, path)
+
+    if metadata is not None:
+        metadata.save(os.path.dirname(path))
+
+def load_from_checkpoint(path, fine_tune=False, use_lora=False):
+    """
+    Loads the model checkpoint from the given path. Creates a TokenClassifier instance, 
+    with and passes it args from the checkpoint, and flags from the from the arguments.
+    The created model loads the state dict from the checkpoint. Also creates an optimizer with 
+    a state_dict from the checkpoint. 
+    
+    Returns a quintuple (model, opitm, epoch, loss, args)
+    """
+    chkpt = torch.load(path)
+    args, epoch, loss = chkpt['args'], chkpt['epoch'], chkpt['loss']
+    base, tokenizer = get_esm(args)
+    model = TokenClassifier(args, base, fine_tune=fine_tune, use_lora=use_lora)
+    model.load_state_dict(chkpt['model_state_dict'])
+    optim = torch.optim.AdamW(model.parameters(),weight_decay=args.weight_decay)
+    optim.load_state_dict(chkpt['optimizer_state_dict'])
+    return model, optim, epoch, loss, args
+
 def save_model(args, model, name):
-    save_path = f'{args.o}/{name}.pt'
-    if not os.path.exists(f'{args.o}'):
-        os.mkdir(f'{args.o}')
+    """
+    Saves the model to the folder args.o if given, otherwise to args.logdir, with the given name.
+    """
+    if args.o is None:
+        folder = args.logdir
+    else:
+        folder = args.o
+
+    save_path = f'{folder}/{name}.pt'
+    if not os.path.exists(f'{folder}'):
+        os.mkdir(f'{folder}')
 
     torch.save(model, save_path)
     print(f'Model saved to {save_path}')
 
 def prep_batch(data, tokenizer, ignore_label=-100):
     """
-    Collate function for a dataloader. "data" is a list of inputs
+    Collate function for a dataloader. "data" is a list of inputs.
+
+    Return a dictionary with keys [input_ids, labels, batch_lens]
     """
     sequences, labels = zip(*data)
     batch = tokenizer(sequences, padding='longest', return_tensors="pt")
@@ -503,6 +595,22 @@ def compute_metrics(y_pred, y, metrics : torchmetrics.MetricCollection):
 
 def main(args):
     set_seeds(args.seed)
+    
+    # Create logdir name
+    args.logdir = os.path.join(
+        "logs",
+        "{}-{}-{}".format(
+            os.path.basename(globals().get("__file__", "notebook")),
+            datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S"),
+            ",".join(
+                (
+                    "{}={}".format(re.sub("(.)[^_]*_?", r"\1", k), v)
+                    for k, v in sorted(vars(args).items())
+                )
+            ),
+        ),
+    )
+
     base, tokenizer = get_esm(args)
     data = load_prot_data(args.dataset_path)
     data = remove_long_sequences(data, args.max_length)
@@ -539,8 +647,8 @@ def main(args):
         training_model = compiled_model
     else:
         training_model = model.to(device)
-    history, compiled_model = train_model(args, train_ds=train, test_ds=test, model=training_model, tokenizer=tokenizer,
-                       seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.epochs, accum=args.accum, lr=args.lr)
+    history, compiled_model = train_model(args, train_ds=train, test_ds=test, model=training_model,
+                       seed=args.seed, batch=args.batch_size, epochs=args.epochs, accum=args.accum, lr=args.lr)
 
     if args.fine_tune:
         save_model(args, model, f'{args.n}_pre_ft')
@@ -559,8 +667,8 @@ def main(args):
             training_model = model.to(device)
 
         # Train with a lower learning rate
-        ft_history, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=training_model, tokenizer=tokenizer,
-                       seed=args.seed, batch=args.batch_size, val_batch=args.val_batch, epochs=args.ft_epochs, accum=args.accum, lr=args.lr / 10)
+        ft_history, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=training_model,
+                       seed=args.seed, batch=args.batch_size, epochs=args.ft_epochs, accum=args.accum, lr=args.lr / 10)
 
     save_model(args, model, args.n)
     return history, model
