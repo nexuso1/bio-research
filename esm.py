@@ -394,7 +394,6 @@ def resume_training(args, train_ds, test_ds, model, current_epoch, optim):
         'f1' : torchmetrics.F1Score(task='binary', ignore_index=-100).to(device),
         'precision' : torchmetrics.Precision(task='binary',ignore_index=-100).to(device),
         'recall' : torchmetrics.Recall(task='binary', ignore_index=-100).to(device),
-        'auc' : torchmetrics.AUROC(task='binary', ignore_index=-100).to(device)
     }
     loss_metric =  torchmetrics.MeanMetric().to(device)
     metrics = torchmetrics.MetricCollection(metrics)
@@ -449,7 +448,6 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
         'f1' : torchmetrics.F1Score(task='binary', ignore_index=-100).to(device),
         'precision' : torchmetrics.Precision(task='binary',ignore_index=-100).to(device),
         'recall' : torchmetrics.Recall(task='binary', ignore_index=-100).to(device),
-        'auc' : torchmetrics.AUROC(task='binary', ignore_index=-100).to(device)
     }
     loss_metric =  torchmetrics.MeanMetric().to(device)
     metrics = torchmetrics.MetricCollection(metrics)
@@ -488,8 +486,8 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
 
         save_checkpoint(args, model, optim, epoch, loss, os.path.join(args.logdir, 'chkpt.pt'))
         print(f'Epoch {epoch}, starting evaluation...')
-        metrics = eval_model(model, test_ds, epoch, metrics)
-        history.append(metrics)
+        eval_logs = eval_model(model, test_ds, epoch, metrics)
+        history.append(eval_logs)
     return history, model
 
 def preprocess_data(df : pd.DataFrame):
