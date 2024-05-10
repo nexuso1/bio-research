@@ -209,7 +209,14 @@ class Metadata:
     def __init__(self) -> None:
         self.data = {}
 
+    def toJSON(self):
+        return json.dumps(
+            self,
+            default=lambda o: o.__dict__, 
+            sort_keys=True,
+            indent=4)
+    
     def save(self, dir : str):
         os.makedirs(dir, exist_ok=True)
         with open(os.path.join(dir, 'metadata.json'), 'w') as f:
-            json.dump(self, f)
+            json.dump(self.toJSON(), f)
