@@ -393,7 +393,8 @@ def resume_training(args, train_ds, test_ds, model, current_epoch, optim):
     metrics = {
         'f1' : torchmetrics.F1Score(task='binary', ignore_index=-100).to(device),
         'precision' : torchmetrics.Precision(task='binary',ignore_index=-100).to(device),
-        'recall' : torchmetrics.Recall(task='binary', ignore_index=-100).to(device)
+        'recall' : torchmetrics.Recall(task='binary', ignore_index=-100).to(device),
+        'auc' : torchmetrics.AUROC(task='binary', ignore_index=-100).to(device)
     }
     loss_metric =  torchmetrics.MeanMetric().to(device)
     metrics = torchmetrics.MetricCollection(metrics)
@@ -447,7 +448,8 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
     metrics = {
         'f1' : torchmetrics.F1Score(task='binary', ignore_index=-100).to(device),
         'precision' : torchmetrics.Precision(task='binary',ignore_index=-100).to(device),
-        'recall' : torchmetrics.Recall(task='binary', ignore_index=-100).to(device)
+        'recall' : torchmetrics.Recall(task='binary', ignore_index=-100).to(device),
+        'auc' : torchmetrics.AUROC(task='binary', ignore_index=-100).to(device)
     }
     loss_metric =  torchmetrics.MeanMetric().to(device)
     metrics = torchmetrics.MetricCollection(metrics)
@@ -483,7 +485,6 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
                 ]
             data_and_progress.set_description(" ".join(message))
             data_and_progress.update(1)
-            break
 
         save_checkpoint(args, model, optim, epoch, loss, os.path.join(args.logdir, 'chkpt.pt'))
         print(f'Epoch {epoch}, starting evaluation...')
