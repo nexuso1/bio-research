@@ -374,7 +374,7 @@ def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
         for batch in test_ds:
             batch = {k: v.to(device) for k, v in batch.items()}
             # Model returns a tuple, logits are the first element when not given labels
-            loss, logits = model(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'], batch_lens=batch['batch_lens'])
+            logits = model(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'], batch_lens=batch['batch_lens'])
             mask = batch['labels'].view(-1) != -100
             preds = torch.sigmoid(preds[0].view(-1)[mask])
             target = batch['labels'].view(-1)[mask]
@@ -595,7 +595,7 @@ def compute_metrics(y_pred, y, metrics : torchmetrics.MetricCollection):
 
 def main(args):
     set_seeds(args.seed)
-    
+
     # Create logdir name
     args.logdir = os.path.join(
         "logs",
