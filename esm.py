@@ -376,11 +376,9 @@ def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
             # Model returns a tuple, logits are the first element when not given labels
             loss, logits = model(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'], batch_lens=batch['batch_lens'], labels=batch['labels'])
             mask = batch['labels'].view(-1) != -100
-            preds = torch.sigmoid(preds[0].view(-1)[mask])
+            preds = torch.sigmoid(logits.view(-1)[mask])
             target = batch['labels'].view(-1)[mask]
-            for metric, _ in metrics:
-                metric.update(target=target.int(), input=preds)
-            logs = compute_metrics(logits, batch['labels'], metrics)
+            logs = compute_metrics(preds.view(-1, 1), target, metrics)
             loss_metric.update(loss)
             logs['loss'] = loss_metric.compute()
             message = [epoch_message] + [
@@ -388,7 +386,7 @@ def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
                 for k, v in logs.items()
             ]
             progress_bar.set_description(" ".join(message))
-
+            progress_bar.update(1)
     return logs
 
 def resume_training(args, train_ds, test_ds, model, current_epoch, optim):
@@ -485,8 +483,9 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
                 ]
             data_and_progress.set_description(" ".join(message))
             data_and_progress.update(1)
+            break
 
-        save_checkpoint(args, model, optim, )
+        save_checkpoint(args, model, optim, epoch, loss, os.path.join(args.logdir, 'chkpt.pt'))
         print(f'Epoch {epoch}, starting evaluation...')
         metrics = eval_model(model, test_ds, epoch, metrics)
         history.append(metrics)
@@ -524,7 +523,7 @@ def save_checkpoint(args, model : TokenClassifier, optim : torch.optim.Optimizer
     """
     Saves model checkpoint during training. Path should include the filename.
     """
-    os.makedirs(path, exist_ok=True)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     torch.save({
     'optimizer_state_dict': optim.state_dict(),
     'model_state_dict': model.state_dict(),
@@ -597,17 +596,15 @@ def main(args):
     # Create logdir name
     args.logdir = os.path.join(
         "logs",
-        "{}-{}-{}".format(
+        "{}_{}".format(
             os.path.basename(globals().get("__file__", "notebook")),
-            datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S"),
-            ",".join(
-                (
-                    "{}={}".format(re.sub("(.)[^_]*_?", r"\1", k), v)
-                    for k, v in sorted(vars(args).items())
-                )
-            ),
+            datetime.datetime.now().strftime("%Y_%m_%d_%H%M%S"),
         ),
     )
+
+    meta = Metadata()
+    meta.data = args
+    meta.save(args.logdir)
 
     base, tokenizer = get_esm(args)
     data = load_prot_data(args.dataset_path)
