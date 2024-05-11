@@ -637,6 +637,7 @@ def main(args):
     if args.checkpoint_path is not None:
         model, optim, epoch, loss, args =  load_from_checkpoint(args.checkpoint_path)
         model.to(device)
+        optim.to(device)
         resume_training(args, train, test, model, epoch, optim)
     else:
         model = TokenClassifier(args, base, use_lora=False, fine_tune=False)
