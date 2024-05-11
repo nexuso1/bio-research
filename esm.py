@@ -431,8 +431,8 @@ def resume_training(args, train_ds, test_ds, model, current_epoch, optim):
 
         save_checkpoint(args, model, optim, epoch, loss, os.path.join(args.logdir, 'chkpt.pt'))
         print(f'Epoch {epoch}, starting evaluation...')
-        metrics = eval_model(model, test_ds, epoch, metrics)
-        history.append(metrics)
+        eval_logs = eval_model(model, test_ds, epoch, metrics)
+        history.append(eval_logs)
     return history, model
 
 def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Module, lr, seed=42):
