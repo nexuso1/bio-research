@@ -548,6 +548,7 @@ def load_from_checkpoint(path, fine_tune=False, use_lora=False):
     base, tokenizer = get_esm(args)
     model = TokenClassifier(args, base, fine_tune=fine_tune, use_lora=use_lora)
     model.load_state_dict(chkpt['model_state_dict'])
+    model.to(device)
     optim = torch.optim.AdamW(model.parameters(),weight_decay=args.weight_decay)
     optim.load_state_dict(chkpt['optimizer_state_dict'])
     return model, optim, epoch, loss, args
@@ -636,8 +637,6 @@ def main(args):
 
     if args.checkpoint_path is not None:
         model, optim, epoch, loss, args =  load_from_checkpoint(args.checkpoint_path)
-        model.to(device)
-        optim.to(device)
         resume_training(args, train, test, model, epoch, optim)
     else:
         model = TokenClassifier(args, base, use_lora=False, fine_tune=False)
