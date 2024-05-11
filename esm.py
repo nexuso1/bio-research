@@ -429,6 +429,7 @@ def resume_training(args, train_ds, test_ds, model, current_epoch, optim):
             data_and_progress.set_description(" ".join(message))
             data_and_progress.update(1)
 
+        save_checkpoint(args, model, optim, epoch, loss, os.path.join(args.logdir, 'chkpt.pt'))
         print(f'Epoch {epoch}, starting evaluation...')
         metrics = eval_model(model, test_ds, epoch, metrics)
         history.append(metrics)
@@ -631,7 +632,7 @@ def main(args):
 
     train = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer),
                        persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
-    test = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer),
+    test = DataLoader(test_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer),
                       persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
 
 
