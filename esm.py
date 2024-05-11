@@ -634,14 +634,18 @@ def main(args):
                       persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
 
 
-    model = TokenClassifier(args, base, use_lora=False, fine_tune=False)
-    if args.compile:
-        compiled_model = torch.compile(model)
-        compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
-        training_model = compiled_model
+    if args.checkpoint_path is not None:
+        model, optim, epoch, loss, args =  load_from_checkpoint(args.checkpoint_path)
+        resume_training(args, train, test, model, epoch, optim)
     else:
-        training_model = model.to(device)
-    history, compiled_model = train_model(args, train_ds=train, test_ds=test, model=training_model, seed=args.seed, lr=args.lr)
+        model = TokenClassifier(args, base, use_lora=False, fine_tune=False)
+        if args.compile:
+            compiled_model = torch.compile(model)
+            compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
+            training_model = compiled_model
+        else:
+            training_model = model.to(device)
+        history, compiled_model = train_model(args, train_ds=train, test_ds=test, model=training_model, seed=args.seed, lr=args.lr)
 
     if args.fine_tune:
         save_model(args, model, f'{args.n}_pre_ft')
