@@ -435,15 +435,14 @@ def resume_training(args, train_ds, test_ds, model, last_epoch, optim, metadata=
         history.append(eval_logs)
     return history, model
 
-def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Module, lr, metadata=None,seed=42):
+def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : torch.nn.Module, lr, metadata=None,seed=42):
 
     # Set all random seeds
     set_seeds(seed)
 
     optim = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=args.weight_decay)
-    # Cycle momentum not available with adam
-    schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, len(train_ds) * args.epochs)
 
+    schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, len(train_ds) * args.epochs)
 
     metrics = {
         'f1' : torchmetrics.F1Score(task='binary', ignore_index=-100).to(device),
@@ -487,7 +486,7 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
 
         save_checkpoint(args, model, optim, epoch, loss, os.path.join(args.logdir, 'chkpt.pt'), metadata)
         print(f'Epoch {epoch}, starting evaluation...')
-        eval_logs = eval_model(model, test_ds, epoch, metrics)
+        eval_logs = eval_model(model, dev_ds, epoch, metrics)
         history.append(eval_logs)
     return history, model
 
@@ -628,17 +627,17 @@ def main(args):
     #                             max_batch_residues=args.batch_size)
 
     train_dataset = ProteinTorchDataset(train_df)
-    test_dataset = ProteinTorchDataset(test_df)
+    dev_dataset = ProteinTorchDataset(test_df)
 
     train = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer),
                        persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
-    test = DataLoader(test_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer),
+    dev = DataLoader(dev_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer),
                       persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
 
 
     if args.checkpoint_path is not None:
         model, optim, epoch, loss, args =  load_from_checkpoint(args.checkpoint_path)
-        history, model = resume_training(args, train, test, model, epoch, optim, meta)
+        history, model = resume_training(args, train, dev, model, epoch, optim, meta)
     else:
         model = TokenClassifier(args, base, use_lora=False, fine_tune=False)
         if args.compile:
@@ -647,7 +646,7 @@ def main(args):
             training_model = compiled_model
         else:
             training_model = model.to(device)
-        history, compiled_model = train_model(args, train_ds=train, test_ds=test, model=training_model, seed=args.seed, lr=args.lr)
+        history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr)
 
     if args.fine_tune:
         save_model(args, model, f'{args.n}_pre_ft')
@@ -667,7 +666,7 @@ def main(args):
             training_model = model.to(device)
 
         # Train with a lower learning rate
-        ft_history, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=training_model,
+        ft_history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model,
                        seed=args.seed, lr=args.lr / 10, metadata=meta)
         history.extend(ft_history)
 
