@@ -389,7 +389,7 @@ def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
             progress_bar.update(1)
     return logs
 
-def resume_training(args, train_ds, test_ds, model, current_epoch, optim):
+def resume_training(args, train_ds, test_ds, model, last_epoch, optim):
     metrics = {
         'f1' : torchmetrics.F1Score(task='binary', ignore_index=-100).to(device),
         'precision' : torchmetrics.Precision(task='binary',ignore_index=-100).to(device),
@@ -399,7 +399,7 @@ def resume_training(args, train_ds, test_ds, model, current_epoch, optim):
     metrics = torchmetrics.MetricCollection(metrics)
     schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, args.lr)
     history = []
-    for epoch in range(current_epoch, args.epochs):
+    for epoch in range(last_epoch + 1, args.epochs):
         model.train()
         metrics.reset()
         epoch_message = f"Epoch={epoch+1}/{args.epochs}"
