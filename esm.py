@@ -389,7 +389,7 @@ def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
             progress_bar.update(1)
     return logs
 
-def resume_training(args, train_ds, test_ds, model, last_epoch, optim):
+def resume_training(args, train_ds, test_ds, model, last_epoch, optim, metadata=None):
     metrics = {
         'f1' : torchmetrics.F1Score(task='binary', ignore_index=-100).to(device),
         'precision' : torchmetrics.Precision(task='binary',ignore_index=-100).to(device),
@@ -429,13 +429,13 @@ def resume_training(args, train_ds, test_ds, model, last_epoch, optim):
             data_and_progress.set_description(" ".join(message))
             data_and_progress.update(1)
 
-        save_checkpoint(args, model, optim, epoch, loss, os.path.join(args.logdir, 'chkpt.pt'))
+        save_checkpoint(args, model, optim, epoch, loss, os.path.join(args.logdir, 'chkpt.pt'), metadata)
         print(f'Epoch {epoch}, starting evaluation...')
         eval_logs = eval_model(model, test_ds, epoch, metrics)
         history.append(eval_logs)
     return history, model
 
-def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Module, lr, seed=42):
+def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Module, lr, metadata=None,seed=42):
 
     # Set all random seeds
     set_seeds(seed)
@@ -485,7 +485,7 @@ def train_model(args, train_ds : Dataset, test_ds : Dataset, model : torch.nn.Mo
             data_and_progress.set_description(" ".join(message))
             data_and_progress.update(1)
 
-        save_checkpoint(args, model, optim, epoch, loss, os.path.join(args.logdir, 'chkpt.pt'))
+        save_checkpoint(args, model, optim, epoch, loss, os.path.join(args.logdir, 'chkpt.pt'), metadata)
         print(f'Epoch {epoch}, starting evaluation...')
         eval_logs = eval_model(model, test_ds, epoch, metrics)
         history.append(eval_logs)
@@ -618,7 +618,7 @@ def main(args):
     print(f'Train dataset shape: {train_df.shape}')
     print(f'Test dataset shape: {test_df.shape}')
     
-    test_path = f'./{args.o}/{args.n}_test_data.json'
+    test_path = f'./{args.o if args.o else args.logdir}/{args.n}_test_data.json'
     save_as_string(list(test_prots), test_path)
     print(f'Test prots saved to {test_path}')
     
@@ -638,7 +638,7 @@ def main(args):
 
     if args.checkpoint_path is not None:
         model, optim, epoch, loss, args =  load_from_checkpoint(args.checkpoint_path)
-        history, model = resume_training(args, train, test, model, epoch, optim)
+        history, model = resume_training(args, train, test, model, epoch, optim, meta)
     else:
         model = TokenClassifier(args, base, use_lora=False, fine_tune=False)
         if args.compile:
@@ -651,6 +651,7 @@ def main(args):
 
     if args.fine_tune:
         save_model(args, model, f'{args.n}_pre_ft')
+        meta['fine_tuning'] = True
         # Unfreeze base
         model.unfreeze_base()
 
@@ -667,7 +668,7 @@ def main(args):
 
         # Train with a lower learning rate
         ft_history, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=training_model,
-                       seed=args.seed, lr=args.lr / 10)
+                       seed=args.seed, lr=args.lr / 10, metadata=meta)
         history.extend(ft_history)
 
     save_model(args, model, args.n)
