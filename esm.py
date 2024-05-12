@@ -640,6 +640,7 @@ def main(args):
         model, optim, epoch, loss, args =  load_from_checkpoint(args.checkpoint_path)
         history, model = resume_training(args, train, dev, model, epoch, optim, meta)
         args.fine_tune = prev_ft_val
+        meta.history = history
     else:
         model = TokenClassifier(args, base, use_lora=False, fine_tune=False)
         if args.compile:
@@ -653,7 +654,7 @@ def main(args):
 
     if args.fine_tune:
         save_model(args, model, f'{args.n}_pre_ft')
-        meta.data['fine_tuning'] = True
+        meta.fine_tuning = True
         # Unfreeze base
         model.unfreeze_base()
 
@@ -672,7 +673,7 @@ def main(args):
         ft_history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model,
                        seed=args.seed, lr=args.lr / 10, metadata=meta)
         history.extend(ft_history)
-
+        meta.history = history
     save_model(args, model, args.n)
     return history, model
 
