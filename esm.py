@@ -648,6 +648,7 @@ def main(args):
             training_model = model.to(device)
         history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr)
 
+    print(args.fine_tune)
     if args.fine_tune:
         save_model(args, model, f'{args.n}_pre_ft')
         meta['fine_tuning'] = True
