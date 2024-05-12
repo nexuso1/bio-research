@@ -638,7 +638,7 @@ def main(args):
 
     if args.checkpoint_path is not None:
         model, optim, epoch, loss, args =  load_from_checkpoint(args.checkpoint_path)
-        resume_training(args, train, test, model, epoch, optim)
+        history, model = resume_training(args, train, test, model, epoch, optim)
     else:
         model = TokenClassifier(args, base, use_lora=False, fine_tune=False)
         if args.compile:
@@ -668,6 +668,7 @@ def main(args):
         # Train with a lower learning rate
         ft_history, compiled_model = train_model(args, train_ds=train_dataset, test_ds=test_dataset, model=training_model,
                        seed=args.seed, lr=args.lr / 10)
+        history.extend(ft_history)
 
     save_model(args, model, args.n)
     return history, model
