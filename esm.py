@@ -636,8 +636,10 @@ def main(args):
 
 
     if args.checkpoint_path is not None:
+        prev_ft_val = args.fine_tune
         model, optim, epoch, loss, args =  load_from_checkpoint(args.checkpoint_path)
         history, model = resume_training(args, train, dev, model, epoch, optim, meta)
+        args.fine_tune = prev_ft_val
     else:
         model = TokenClassifier(args, base, use_lora=False, fine_tune=False)
         if args.compile:
