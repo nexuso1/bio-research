@@ -28,7 +28,7 @@ from functools import partial
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--seed', type=int, help='Random seed', default=42)
-parser.add_argument('--batch_size', type=int, help='Batch size)', default=4)
+parser.add_argument('--batch_size', type=int, help='Batch size)', default=8)
 parser.add_argument('--epochs', type=int, help='Number of training epochs', default=20)
 parser.add_argument('--max_length', type=int, help='Maximum sequence length (shorter sequences will be pruned)', default=1024)
 parser.add_argument('--dataset_path', type=str, 
@@ -426,7 +426,7 @@ def resume_training(args, train_ds, test_ds, model, last_epoch, optim, metadata=
                     f"{k}={v:.{0<abs(v)<2e-4 and '3g' or '4f'}}"
                     for k, v in logs.items()
                 ]
-            data_and_progress.set_description(" ".join(message))
+                data_and_progress.set_description(" ".join(message))
             data_and_progress.update(1)
 
         save_checkpoint(args, model, optim, epoch, loss, os.path.join(args.logdir, 'chkpt.pt'), metadata)
