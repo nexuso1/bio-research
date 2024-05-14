@@ -481,7 +481,7 @@ def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : torch.nn.Mod
                     f"{k}={v:.{0<abs(v)<2e-4 and '3g' or '4f'}}"
                     for k, v in logs.items()
                 ]
-            data_and_progress.set_description(" ".join(message))
+                data_and_progress.set_description(" ".join(message))
             data_and_progress.update(1)
 
         save_checkpoint(args, model, optim, epoch, loss, os.path.join(args.logdir, 'chkpt.pt'), metadata)
