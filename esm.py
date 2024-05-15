@@ -16,7 +16,7 @@ import torchmetrics
 import datetime
 
 from tqdm.auto import tqdm
-from utils import remove_long_sequences, load_prot_data, Metadata
+from utils import remove_long_sequences, load_prot_data, Metadata, load_torch_model
 from datasets import Dataset
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
@@ -53,10 +53,11 @@ parser.add_argument('--mlp', action='store_true', help='Use an MLP classifier', 
 parser.add_argument('--dropout', type=float, help='Dropout probability', default=0)
 parser.add_argument('--ft_epochs', type=int, help='Number of epochs for finetuning', default=10)
 parser.add_argument('--type', help='ESM Model type', type=str, default='650M')
-parser.add_argument('--pos_weight', help='Positive class weight', type=float, default=0.98)
+parser.add_argument('--pos_weight', help='Positive class weight', type=float, default=0.97)
 parser.add_argument('--num_workers', help='Number of multiprocessign workers', type=int, default=0)
 parser.add_argument('--rnn_layers', help='Number of RNN classifier layers', type=int, default=2)
 parser.add_argument('--checkpoint_path', help='Resume training from checkpoint', type=str, default=None)
+parser.add_argument('--model_path', help='Load model from this path (not a checkpoint)', type=str, default=None)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -601,15 +602,20 @@ def main(args):
             datetime.datetime.now().strftime("%Y_%m_%d_%H%M%S"),
         ),
     )
-
+    
+    # Create metadata
     meta = Metadata()
     meta.data = args
     meta.save(args.logdir)
 
+    # Load ESM-2
     base, tokenizer = get_esm(args)
+    # Load and preprocess data from the dataset
     data = load_prot_data(args.dataset_path)
     data = remove_long_sequences(data, args.max_length)
     #prepped_data = preprocess_data(data)
+    # Load clustering information about proteins,
+    # And split the clusters into train and test sets
     clusters = load_clusters(args.clusters)
     train_clusters, test_clusters = split_train_test_clusters(args, clusters, test_size=0.2) # Split clusters into train and test sets
     train_prots, test_prots = get_train_test_prots(clusters, train_clusters, test_clusters) # Extract the train proteins and test proteins
@@ -617,6 +623,7 @@ def main(args):
     print(f'Train dataset shape: {train_df.shape}')
     print(f'Test dataset shape: {test_df.shape}')
     
+    # Save test proteins
     test_path = f'./{args.o if args.o else args.logdir}/{args.n}_test_data.json'
     save_as_string(list(test_prots), test_path)
     print(f'Test prots saved to {test_path}')
@@ -634,16 +641,27 @@ def main(args):
     dev = DataLoader(dev_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer),
                       persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
 
-
     if args.checkpoint_path is not None:
         prev_ft_val = args.fine_tune
         model, optim, epoch, loss, args =  load_from_checkpoint(args.checkpoint_path)
+        if args.compile:
+            compiled_model = torch.compile(model)
+            compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
+            training_model = compiled_model
+        else:
+            training_model = model.to(device)
         history, model = resume_training(args, train, dev, model, epoch, optim, meta)
         args.fine_tune = prev_ft_val
         meta.history = history
     else:
-        model = TokenClassifier(args, base, use_lora=False, fine_tune=False)
+        # Load a model saved with torch.save() 
+        if args.model_path is not None:
+            model = load_torch_model(args.model_path)
+        else:
+            # Create a classifier
+            model = TokenClassifier(args, base, use_lora=False, fine_tune=False)
         if args.compile:
+            # Compile the model, useful in general on Ampere architectures and further
             compiled_model = torch.compile(model)
             compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
             training_model = compiled_model
