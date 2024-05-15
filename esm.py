@@ -672,6 +672,7 @@ def main(args):
 
     # --- Fine-tuning
     if args.fine_tune:
+        print(f'batch:{args.batch_size} accum {args.accum} effective batch {args.accum * args.batch_size}')
         # Save model before fine-tuning
         save_model(args, model, f'{args.n}_pre_ft')
         meta.fine_tuning = True
