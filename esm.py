@@ -36,6 +36,7 @@ parser.add_argument('--dataset_path', type=str,
                      default='./phosphosite_sequences/phosphosite_df_small.json')
 parser.add_argument('--clusters', type=str, help='Path to clusters', default='cluster30.tsv')
 parser.add_argument('--fine_tune', action='store_true', help='Use fine tuning on the base model or not. Default is False', default=False)
+parser.add_argument('--ft_only', action='store_true', help='Skip pre-training, only fine-tune', default=False)
 parser.add_argument('--weight_decay', type=float, help='Weight decay', default=0.004)
 parser.add_argument('--accum', type=int, help='Number of gradient accumulation steps', default=1)
 parser.add_argument('--rnn', type=bool, help='Use an RNN classification head', default=True)
@@ -43,7 +44,7 @@ parser.add_argument('--val_batch', type=int, help='Validation batch size', defau
 parser.add_argument('--hidden_size', type=int, help='Classifier hidden size. Relevant for cnn, rnn and simple classifiers', default=256)
 parser.add_argument('--lr', type=float, help='Learning rate', default=3e-4)
 parser.add_argument('-o', type=str, help='Output folder', default=None)
-parser.add_argument('-n', type=str, help='Model name', default='esm.pt')
+parser.add_argument('-n', type=str, help='Model name', default='esm')
 parser.add_argument('--layers', type=str, help='Hidden layers for the linear classifier', default='[1024]')
 parser.add_argument('--compile', action='store_true', default=False, help='Compile the model')
 parser.add_argument('--lora', action='store_true', help='Use LoRA', default=False)
@@ -644,33 +645,34 @@ def main(args):
     if args.checkpoint_path is not None:
         prev_ft_val = args.fine_tune
         model, optim, epoch, loss, args =  load_from_checkpoint(args.checkpoint_path)
-        if args.compile:
-            compiled_model = torch.compile(model)
-            compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
-            training_model = compiled_model
-        else:
-            training_model = model.to(device)
+     
+    # Load a model saved with torch.save() 
+    elif args.model_path is not None:
+        model = load_torch_model(args.model_path)
+    else:
+        # Create a classifier
+        model = TokenClassifier(args, base, use_lora=False, fine_tune=False)
+
+    if args.compile:
+        # Compile the model, useful in general on Ampere architectures and further
+        compiled_model = torch.compile(model)
+        compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
+        training_model = compiled_model
+    else:
+        training_model = model.to(device)
+    
+    # --- Training ---
+    if args.checkpoint_path is not None:
+        # Will potentially fine-tune the model, based on the loaded requires_grad params
         history, model = resume_training(args, train, dev, model, epoch, optim, meta)
         args.fine_tune = prev_ft_val
         meta.history = history
-    else:
-        # Load a model saved with torch.save() 
-        if args.model_path is not None:
-            model = load_torch_model(args.model_path)
-        else:
-            # Create a classifier
-            model = TokenClassifier(args, base, use_lora=False, fine_tune=False)
-        if args.compile:
-            # Compile the model, useful in general on Ampere architectures and further
-            compiled_model = torch.compile(model)
-            compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
-            training_model = compiled_model
-        else:
-            training_model = model.to(device)
+    elif not args.fine_tune or args.fine_tune and not args.ft_only:
         history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr)
 
-
+    # --- Fine-tuning
     if args.fine_tune:
+        # Save model before fine-tuning
         save_model(args, model, f'{args.n}_pre_ft')
         meta.fine_tuning = True
         # Unfreeze base
