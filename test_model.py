@@ -27,6 +27,7 @@ parser.add_argument('--prots', type=str, help='Path to protein dataset, mapping 
 parser.add_argument('-p', type=bool, help='Whether the test data are proteins or not', default=True)
 parser.add_argument('--max_length', type=int, help='Maximum length of protein sequence to consider (longer sequences will be filtered out of the test data. Default is 1024.', default=1024)
 parser.add_argument('--chkpt', action='store_true', default=False, help='Model is a checkpoint')
+parser.add_argument('--batch_size', default=12, help='Batch size', type=int)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 def save_preds(args, pred_df):
