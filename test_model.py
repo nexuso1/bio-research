@@ -3,13 +3,19 @@ import pandas as pd
 import numpy as np
 import os
 import glob
+import torchmetrics
+import tqdm
 import torch
 
-from train_script import TokenClassifier
+
+from torch.utils.data import DataLoader
+from functools import partial
+from esm import prep_batch, compute_metrics
 from argparse import ArgumentParser
 from utils import load_tf_model, flatten_list, load_torch_model, preprocess_data, remove_long_sequences
 from utils import load_prot_data
-from transformers import BertTokenizer
+from prot_dataset import ProteinTorchDataset
+from transformers import AutoTokenizer
 from sklearn.metrics import f1_score, accuracy_score
 
 parser = ArgumentParser()
@@ -20,7 +26,6 @@ parser.add_argument('-t', type=str, help='Test data path', default='./')
 parser.add_argument('--prots', type=str, help='Path to protein dataset, mapping IDs to sequences.', default='./phosphosite_sequences/phosphosite_df.json')
 parser.add_argument('-p', type=bool, help='Whether the test data are proteins or not', default=True)
 parser.add_argument('--max_length', type=int, help='Maximum length of protein sequence to consider (longer sequences will be filtered out of the test data. Default is 1024.', default=1024)
-parser.add_argument('--mode', type=str, help='Test mode. Either "pt" for Pytorch models, or "tf" for tensorflow models.', default='tf')
 
 def save_preds(args, pred_df):
     model_name = os.path.basename(args.i)
@@ -95,20 +100,48 @@ def main(args):
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = load_torch_model(args.i)
-    tokenizer = BertTokenizer.from_pretrained("Rostlab/prot_bert", do_lower_case=False)
+    tokenizer = AutoTokenizer.from_pretrained('facebook/esm2_t33_650M_UR50D')
     protein_df = load_prot_data(args.prots).set_index('id')
+    dev_dataset = ProteinTorchDataset(protein_df)
+    dev = DataLoader(dev_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer),
+                      persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
+    
+    metrics = {
+        'f1' : torchmetrics.F1Score(task='binary', ignore_index=-100).to(device),
+        'precision' : torchmetrics.Precision(task='binary',ignore_index=-100).to(device),
+        'recall' : torchmetrics.Recall(task='binary', ignore_index=-100).to(device),
+    }
+    loss_metric =  torchmetrics.MeanMetric().to(device)
+    metrics = torchmetrics.MetricCollection(metrics)
 
     if args.p:
         test_df = prepare_prot_df(args, protein_df)
         print(test_df.head(5))
         preds = []
         probs = []
+        
+        model.eval()
+        metrics.reset()
+        loss_metric =  torchmetrics.MeanMetric().to(device)
+        epoch_message = f""
+        progress_bar = tqdm(range(len(dev)))
         with torch.no_grad():
-            for i, prot in enumerate(test_df.index):
-                if i % 100 == 0:
-                    print(i)
-                inputs = tokenizer(test_df.loc[prot]['sequence'], padding=False, return_tensors='pt').to(device)
-                logits = model(**inputs)[0].to('cpu')
+            for batch in dev:
+                batch = {k: v.to(device) for k, v in batch.items()}
+                # Model returns a tuple, logits are the first element when not given labels
+                loss, logits = model(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'], batch_lens=batch['batch_lens'], labels=batch['labels'])
+                mask = batch['labels'].view(-1) != -100
+                preds = torch.sigmoid(logits.view(-1)[mask])
+                target = batch['labels'].view(-1)[mask]
+                logs = compute_metrics(preds.view(-1, 1), target, metrics)
+                loss_metric.update(loss)
+                logs['loss'] = loss_metric.compute()
+                message = [epoch_message] + [
+                    f"dev_{k}={v:.{0<abs(v)<2e-4 and '3g' or '4f'}}"
+                    for k, v in logs.items()
+                ]
+                progress_bar.set_description(" ".join(message))
+                progress_bar.update(1)  
                 prob = torch.nn.functional.softmax(logits, dim=-1).numpy()
                 pred = np.argmax(prob, axis=-1)
                 preds.append(pred.flatten()[1:-1]) # Slice off the padding tokens
@@ -121,7 +154,7 @@ def main(args):
         save_preds(args, test_df)
         
         # Calculate relevant metrics
-        calculate_metrics(flatten_list(test_df['label'].to_numpy()), flatten_list(preds))
+        # calculate_metrics(flatten_list(test_df['label'].to_numpy()), flatten_list(preds))
 
         # Analyze performance on relevant AAs
         analyze_preds(args, test_df)
