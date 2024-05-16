@@ -10,7 +10,7 @@ import torch
 
 from torch.utils.data import DataLoader
 from functools import partial
-from esm import prep_batch, compute_metrics
+from esm import prep_batch, compute_metrics, get_esm, TokenClassifier
 from argparse import ArgumentParser
 from utils import load_tf_model, flatten_list, load_torch_model, preprocess_data, remove_long_sequences
 from utils import load_prot_data
@@ -26,6 +26,8 @@ parser.add_argument('-t', type=str, help='Test data path', default='./')
 parser.add_argument('--prots', type=str, help='Path to protein dataset, mapping IDs to sequences.', default='./phosphosite_sequences/phosphosite_df.json')
 parser.add_argument('-p', type=bool, help='Whether the test data are proteins or not', default=True)
 parser.add_argument('--max_length', type=int, help='Maximum length of protein sequence to consider (longer sequences will be filtered out of the test data. Default is 1024.', default=1024)
+parser.add_argument('--chkpt', action='store_true', default=False, help='Model is a checkpoint')
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 def save_preds(args, pred_df):
     model_name = os.path.basename(args.i)
@@ -91,6 +93,25 @@ def calculate_metrics(labels, preds):
     print(f'F1 score: {f1}')
     print(f'Accuracy: {acc}')
 
+def load_from_checkpoint(path, fine_tune=False, use_lora=False):
+    """
+    Loads the model checkpoint from the given path. Creates a TokenClassifier instance, 
+    with and passes it args from the checkpoint, and flags from the from the arguments.
+    The created model loads the state dict from the checkpoint. Also creates an optimizer with 
+    a state_dict from the checkpoint. 
+    
+    Returns a quintuple (model, opitm, epoch, loss, args)
+    """
+    chkpt = torch.load(path)
+    args, epoch, loss = chkpt['args'], chkpt['epoch'], chkpt['loss']
+    base, tokenizer = get_esm(args)
+    model = TokenClassifier(args, base, fine_tune=fine_tune, use_lora=use_lora)
+    model.load_state_dict(chkpt['model_state_dict'])
+    model.to(device)
+    optim = torch.optim.AdamW(model.parameters(),weight_decay=args.weight_decay)
+    optim.load_state_dict(chkpt['optimizer_state_dict'])
+    return model
+
 def main(args):
     if args.a:
         df = pd.read_json(args.i)
@@ -98,8 +119,10 @@ def main(args):
         analyze_preds(args, df)
         return
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = load_torch_model(args.i)
+    if args.chkpt:
+        model = load_from_checkpoint(args.i)
+    else:
+        model = load_torch_model(args.i)
     tokenizer = AutoTokenizer.from_pretrained('facebook/esm2_t33_650M_UR50D')
     protein_df = load_prot_data(args.prots).set_index('id')
     dev_dataset = ProteinTorchDataset(protein_df)
