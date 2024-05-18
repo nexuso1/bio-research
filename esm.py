@@ -39,7 +39,8 @@ parser.add_argument('--fine_tune', action='store_true', help='Use fine tuning on
 parser.add_argument('--ft_only', action='store_true', help='Skip pre-training, only fine-tune', default=False)
 parser.add_argument('--weight_decay', type=float, help='Weight decay', default=0.004)
 parser.add_argument('--accum', type=int, help='Number of gradient accumulation steps', default=1)
-parser.add_argument('--rnn', type=bool, help='Use an RNN classification head', default=True)
+parser.add_argument('--rnn', action='store_true', help='Use an RNN classification head', default=False)
+parser.add_argument('--cnn', action='store_true', help='Use a CNN classifier head', default=False)
 parser.add_argument('--val_batch', type=int, help='Validation batch size', default=10)
 parser.add_argument('--hidden_size', type=int, help='Classifier hidden size. Relevant for cnn, rnn and simple classifiers', default=256)
 parser.add_argument('--lr', type=float, help='Learning rate', default=3e-4)
@@ -58,6 +59,7 @@ parser.add_argument('--pos_weight', help='Positive class weight', type=float, de
 parser.add_argument('--num_workers', help='Number of multiprocessign workers', type=int, default=0)
 parser.add_argument('--rnn_layers', help='Number of RNN classifier layers', type=int, default=2)
 parser.add_argument('--checkpoint_path', help='Resume training from checkpoint', type=str, default=None)
+parser.add_argument('--use_seq_reps', action='store_true', help='Use sequence representations as an additional input to classifier', default=False)
 parser.add_argument('--model_path', help='Load model from this path (not a checkpoint)', type=str, default=None)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -82,7 +84,7 @@ class TokenClassifier(nn.Module):
         
         self.n_labels = n_labels
         # Use sequence representations as an input to the classifier
-        self.use_seq_reps = True
+        self.use_seq_reps = args.use_seq_reps
         self.cnn_seq_reps = args.cnn_sr 
         # Focal loss for each element that will be summed
         # self.loss = partial(focal_loss.sigmoid_focal_loss, reduction='sum')
@@ -164,14 +166,10 @@ class TokenClassifier(nn.Module):
         self.init_weights(self.sr_model)
 
     def build_simple_classifier(self, args):
-        self.sequence_rep_head = torch.nn.Sequential(
-            torch.nn.Linear(self.base.config.hidden_size, args.hidden_size),
-            torch.nn.BatchNorm1d(args.hidden_size),
-            torch.nn.ReLU(inplace=True)
-        )
+        rep_size = args.sr_dim if self.use_seq_reps and (self.cnn_seq_reps) else self.base.config.hidden_size
+        input_size = self.base.config.hidden_size + args.use_seq_reps * rep_size
+        self.classifier = torch.nn.Linear(input_size, self.n_labels)
 
-        self.classifier = torch.nn.Linear(self.base.config.hidden_size + args.hidden_size, self.n_labels)
-        self.init_weights(self.sequence_rep_head)
         self.init_weights(self.classifier)
 
     def build_rnn_classifier(self, args):
@@ -672,7 +670,7 @@ def main(args):
 
     # --- Fine-tuning
     if args.fine_tune:
-        print(f'batch:{args.batch_size} accum {args.accum} effective batch {args.accum * args.batch_size}')
+        print(f'batch {args.batch_size} accum {args.accum} effective batch {args.accum * args.batch_size}')
         # Save model before fine-tuning
         save_model(args, model, f'{args.n}_pre_ft')
         meta.fine_tuning = True
