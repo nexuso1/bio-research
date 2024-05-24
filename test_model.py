@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from functools import partial
 from esm import prep_batch, compute_metrics, get_esm, TokenClassifier
 from argparse import ArgumentParser
-from utils import load_tf_model, flatten_list, load_torch_model, preprocess_data, remove_long_sequences
+from utils import load_torch_model, preprocess_data, remove_long_sequences
 from utils import load_prot_data
 from prot_dataset import ProteinTorchDataset
 from transformers import AutoTokenizer
@@ -23,6 +23,7 @@ parser = ArgumentParser()
 parser.add_argument('-a', type=bool, help='Analyze mode. Analyze results from an existing result dataframe. The -i argument will then be the dataframe path.', default=False)
 parser.add_argument('-i', type=str, help='Model or dataframe path')
 parser.add_argument('-t', type=str, help='Test data path', default='./')
+parser.add_argument('-test_clusters', type=str, help='Test cluster path')
 parser.add_argument('--prots', type=str, help='Path to protein dataset, mapping IDs to sequences.', default='./phosphosite_sequences/phosphosite_df.json')
 parser.add_argument('-p', type=bool, help='Whether the test data are proteins or not', default=True)
 parser.add_argument('--max_length', type=int, help='Maximum length of protein sequence to consider (longer sequences will be filtered out of the test data. Default is 1024.', default=1024)
@@ -70,7 +71,7 @@ def analyze_preds(args, pred_df):
     print('Usual phosphorylation AA results:')
     for i, p in enumerate(relevant_prots):
         acc = accuracy_score(relevant_labels[i], relevant_preds[i])
-        f1 = f1_score(relevant_labels[i], relevant_preds[i], average='macro')
+        f1 = f1_score(relevant_labels[i], relevant_preds[i])
         cm = confusion_matrix(relevant_labels[i], relevant_preds[i])
         print(f'AA with FASTA code {p}:')
         print(f'\tAccuracy: {acc}')
@@ -82,7 +83,7 @@ def analyze_preds(args, pred_df):
     print('Non-canon phosphorylation AA results:')
     for i, p in enumerate(non_canon_prots):
         acc = accuracy_score(nc_labels[i], nc_preds[i])
-        f1 = f1_score(nc_labels[i], nc_preds[i], average='macro')
+        f1 = f1_score(nc_labels[i], nc_preds[i])
         cm = confusion_matrix(relevant_labels[i], relevant_preds[i])
         print(f'AA with FASTA code {p}:')
         print(f'\tAccuracy: {acc}')
@@ -137,6 +138,9 @@ def main(args):
         model = load_torch_model(args.i)
     tokenizer = AutoTokenizer.from_pretrained('facebook/esm2_t33_650M_UR50D')
     protein_df = load_prot_data(args.prots).set_index('id')
+    clusters = pd.read_json(args.test_clusters)
+    mask = protein_df['id'].apply(lambda x : x in clusters)
+    protein_df = protein_df[mask]
     dev_dataset = ProteinTorchDataset(protein_df)
     dev = DataLoader(dev_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer),
                       persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
