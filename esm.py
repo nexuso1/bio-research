@@ -435,7 +435,7 @@ def resume_training(args, train_ds, test_ds, model, last_epoch, optim, metadata=
         history.append(eval_logs)
     return history, model
 
-def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : torch.nn.Module, lr, metadata=None,seed=42):
+def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : torch.nn.Module, lr, metadata : Metadata=None,seed=42):
 
     # Set all random seeds
     set_seeds(seed)
@@ -488,6 +488,7 @@ def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : torch.nn.Mod
         print(f'Epoch {epoch}, starting evaluation...')
         eval_logs = eval_model(model, dev_ds, epoch, metrics)
         history.append(eval_logs)
+        metadata.data['history'] = history
     return history, model
 
 def preprocess_data(df : pd.DataFrame):
@@ -664,7 +665,7 @@ def main(args):
         # Will potentially fine-tune the model, based on the loaded requires_grad params
         history, model = resume_training(args, train, dev, model, epoch, optim, meta)
         args.fine_tune = prev_ft_val
-        meta.history = history
+        meta.data['history'] = history
     elif not args.fine_tune or args.fine_tune and not args.ft_only:
         history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr)
 
@@ -692,7 +693,7 @@ def main(args):
         ft_history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model,
                        seed=args.seed, lr=args.lr / 10, metadata=meta)
         history.extend(ft_history)
-        meta.history = history
+        meta.data['history'] = history
     save_model(args, model, args.n)
     return history, model
 
