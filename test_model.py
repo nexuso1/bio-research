@@ -16,7 +16,7 @@ from utils import load_tf_model, flatten_list, load_torch_model, preprocess_data
 from utils import load_prot_data
 from prot_dataset import ProteinTorchDataset
 from transformers import AutoTokenizer
-from sklearn.metrics import f1_score, accuracy_score
+from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
 
 parser = ArgumentParser()
 
@@ -56,6 +56,7 @@ def analyze_preds(args, pred_df):
 
     for key in pred_df.index:
         row = pred_df.loc[key]
+        
         for i, p in enumerate(relevant_prots):
             labels, preds = extract_labels_from_row(row, p)
             relevant_labels[i].extend(labels)
@@ -70,17 +71,25 @@ def analyze_preds(args, pred_df):
     for i, p in enumerate(relevant_prots):
         acc = accuracy_score(relevant_labels[i], relevant_preds[i])
         f1 = f1_score(relevant_labels[i], relevant_preds[i], average='macro')
+        cm = confusion_matrix(relevant_labels[i], relevant_preds[i])
         print(f'AA with FASTA code {p}:')
         print(f'\tAccuracy: {acc}')
         print(f'\tF1: {f1}')
+        print(f'\tConfusion matrix: {cm}')
+        print(f'\tNumber of predictions: {len(relevant_preds[i])}')
+        print(f'\tNumber of true labels: {len(relevant_labels[i])}')
 
     print('Non-canon phosphorylation AA results:')
     for i, p in enumerate(non_canon_prots):
         acc = accuracy_score(nc_labels[i], nc_preds[i])
         f1 = f1_score(nc_labels[i], nc_preds[i], average='macro')
+        cm = confusion_matrix(relevant_labels[i], relevant_preds[i])
         print(f'AA with FASTA code {p}:')
         print(f'\tAccuracy: {acc}')
+        print(f'\tConfusion matrix: {cm}')
         print(f'\tF1: {f1}')
+        print(f'\tNumber of predictions: {len(nc_preds[i])}')
+        print(f'\tNumber of true labels: {len(nc_labels[i])}')
 
 def prepare_prot_df(args, protein_df):
     protein_ids = pd.read_json(args.t, typ='series', orient='records')
