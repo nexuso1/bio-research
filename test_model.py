@@ -139,7 +139,7 @@ def main(args):
     tokenizer = AutoTokenizer.from_pretrained('facebook/esm2_t33_650M_UR50D')
     protein_df = load_prot_data(args.prots).set_index('id')
     clusters = pd.read_json(args.test_clusters)
-    mask = protein_df['id'].apply(lambda x : x in clusters)
+    mask = protein_df.index.apply(lambda x : x in clusters)
     protein_df = protein_df[mask]
     dev_dataset = ProteinTorchDataset(protein_df)
     dev = DataLoader(dev_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer),
