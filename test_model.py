@@ -140,7 +140,7 @@ def main(args):
     protein_df = load_prot_data(args.prots)
     clusters = pd.read_json(args.test_clusters)
     print(clusters.head(5))
-    mask = protein_df['id'].apply(lambda x : x in clusters)
+    mask = protein_df['id'].apply(lambda x : x in clusters[0])
     dev_df = protein_df[mask]
     dev_dataset = ProteinTorchDataset(dev_df)
     dev = DataLoader(dev_dataset, args.batch_size, collate_fn=partial(prep_batch, tokenizer=tokenizer),
