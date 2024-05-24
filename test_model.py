@@ -137,11 +137,11 @@ def main(args):
     else:
         model = load_torch_model(args.i)
     tokenizer = AutoTokenizer.from_pretrained('facebook/esm2_t33_650M_UR50D')
-    protein_df = load_prot_data(args.prots).set_index('id')
+    protein_df = load_prot_data(args.prots)
     clusters = pd.read_json(args.test_clusters)
-    mask = protein_df.index.apply(lambda x : x in clusters)
-    protein_df = protein_df[mask]
-    dev_dataset = ProteinTorchDataset(protein_df)
+    mask = protein_df['id'].apply(lambda x : x in clusters)
+    dev_df = protein_df[mask]
+    dev_dataset = ProteinTorchDataset(dev_df)
     dev = DataLoader(dev_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer),
                       persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
     
@@ -154,8 +154,6 @@ def main(args):
     metrics = torchmetrics.MetricCollection(metrics)
 
     if args.p:
-        test_df = prepare_prot_df(args, protein_df)
-        print(test_df.head(5))
         preds = []
         probs = []
         
@@ -187,16 +185,17 @@ def main(args):
                 probs.append(prob[0][1:-1, :])
         
         # Save the predictions for later inspection
-        test_df['probabilities'] = probs
-        test_df['predictions'] = preds
-        test_df['sequence'] = protein_df.loc[test_df.index]['sequence'] # Return sequences to their original form
-        save_preds(args, test_df)
+        dev_df.set_index('id')
+        dev_df['probabilities'] = probs
+        dev_df['predictions'] = preds
+        dev_df['sequence'] = protein_df.loc[dev.index]['sequence'] # Return sequences to their original form
+        save_preds(args, dev_df)
         
         # Calculate relevant metrics
         # calculate_metrics(flatten_list(test_df['label'].to_numpy()), flatten_list(preds))
 
         # Analyze performance on relevant AAs
-        analyze_preds(args, test_df)
+        analyze_preds(args, dev_df)
 
     else:
         print('Non-protein data not supported yet. Exiting.')
