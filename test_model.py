@@ -4,10 +4,10 @@ import numpy as np
 import os
 import glob
 import torchmetrics
-import tqdm
 import torch
 
 
+from tqdm import tqdm
 from torch.utils.data import DataLoader
 from functools import partial
 from esm import prep_batch, compute_metrics, get_esm, TokenClassifier
