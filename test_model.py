@@ -189,7 +189,7 @@ def main(args):
         dev_df.set_index('id')
         dev_df['probabilities'] = probs
         dev_df['predictions'] = preds
-        dev_df['sequence'] = protein_df.loc[dev.index]['sequence'] # Return sequences to their original form
+        dev_df['sequence'] = protein_df.loc[dev_df.index]['sequence'] # Return sequences to their original form
         save_preds(args, dev_df)
         
         # Calculate relevant metrics
