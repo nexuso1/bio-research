@@ -1,10 +1,9 @@
-import json
 import pandas as pd
 import numpy as np
 import os
-import glob
 import torchmetrics
 import torch
+import matplotlib.pyplot as plt
 
 
 from tqdm import tqdm
@@ -21,9 +20,9 @@ from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
 parser = ArgumentParser()
 
 parser.add_argument('-a', type=bool, help='Analyze mode. Analyze results from an existing result dataframe. The -i argument will then be the dataframe path.', default=False)
-parser.add_argument('-i', type=str, help='Model or dataframe path')
+parser.add_argument('-i', type=str, help='Model or dataframe path', default='logs\esm.py-2024-05-10_210142\esm.pt.pt')
 parser.add_argument('-t', type=str, help='Test data path', default='./')
-parser.add_argument('--test_clusters', type=str, help='Test cluster path')
+parser.add_argument('--test_clusters', type=str, help='Test cluster path', default='output\esm.pt_test_data.json')
 parser.add_argument('--prots', type=str, help='Path to protein dataset, mapping IDs to sequences.', default='./phosphosite_sequences/phosphosite_df.json')
 parser.add_argument('-p', type=bool, help='Whether the test data are proteins or not', default=True)
 parser.add_argument('--max_length', type=int, help='Maximum length of protein sequence to consider (longer sequences will be filtered out of the test data. Default is 1024.', default=1024)
@@ -139,8 +138,8 @@ def main(args):
     tokenizer = AutoTokenizer.from_pretrained('facebook/esm2_t33_650M_UR50D')
     protein_df = load_prot_data(args.prots)
     clusters = pd.read_json(args.test_clusters)
-    print(clusters.head(5))
-    mask = protein_df['id'].apply(lambda x : x in clusters[0])
+    clusters = set(clusters[0])
+    mask = protein_df['id'].apply(lambda x : x in clusters)
     dev_df = protein_df[mask]
     dev_dataset = ProteinTorchDataset(dev_df)
     dev = DataLoader(dev_dataset, args.batch_size, collate_fn=partial(prep_batch, tokenizer=tokenizer),
@@ -151,7 +150,8 @@ def main(args):
         'precision' : torchmetrics.Precision(task='binary',ignore_index=-100).to(device),
         'recall' : torchmetrics.Recall(task='binary', ignore_index=-100).to(device),
     }
-    loss_metric =  torchmetrics.MeanMetric().to(device)
+    loss_metric =  torchmetrics.MeanMetric(ignore_index=-100).to(device)
+    roc = torchmetrics.ROC(taks='binary', ignore_index=-100).to(device)
     metrics = torchmetrics.MetricCollection(metrics)
 
     if args.p:
@@ -160,7 +160,7 @@ def main(args):
         
         model.eval()
         metrics.reset()
-        loss_metric =  torchmetrics.MeanMetric().to(device)
+
         epoch_message = f""
         progress_bar = tqdm(range(len(dev)))
         with torch.no_grad():
@@ -173,6 +173,7 @@ def main(args):
                 target = batch['labels'].view(-1)[mask]
                 logs = compute_metrics(preds.view(-1, 1), target, metrics)
                 loss_metric.update(loss)
+                roc.update(preds, target)
                 logs['loss'] = loss_metric.compute()
                 message = [epoch_message] + [
                     f"dev_{k}={v:.{0<abs(v)<2e-4 and '3g' or '4f'}}"
@@ -186,6 +187,19 @@ def main(args):
                 probs.append(prob[0][1:-1, :])
         
         # Save the predictions for later inspection
+
+        # ROC computation
+        fig, ax = roc.plot(score=True)
+        fig.savefig(os.path.join(os.path.dirname(args.i), 'roc.png'))
+        fpr, tpr, thresholds = roc.compute()
+        roc_df = pd.DataFrame.from_dict({
+            'fpr' : fpr,
+            'tpr' : tpr,
+            'threshold' : thresholds
+        }, orient='columns')
+        roc_df.to_json(os.path.join(os.path.dirname(args.i), 'roc_df.json'), indent=4)
+
+        # Rest of probabilities
         dev_df.set_index('id')
         dev_df['probabilities'] = probs
         dev_df['predictions'] = preds
