@@ -150,7 +150,7 @@ def main(args):
         'precision' : torchmetrics.Precision(task='binary',ignore_index=-100).to(device),
         'recall' : torchmetrics.Recall(task='binary', ignore_index=-100).to(device),
     }
-    loss_metric =  torchmetrics.MeanMetric(ignore_index=-100).to(device)
+    loss_metric =  torchmetrics.MeanMetric().to(device)
     roc = torchmetrics.ROC(taks='binary', ignore_index=-100).to(device)
     metrics = torchmetrics.MetricCollection(metrics)
 
