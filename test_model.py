@@ -181,10 +181,8 @@ def main(args):
                 ]
                 progress_bar.set_description(" ".join(message))
                 progress_bar.update(1)  
-                prob = torch.nn.functional.softmax(logits, dim=-1).numpy()
-                pred = np.argmax(prob, axis=-1)
-                preds.append(pred.flatten()[1:-1]) # Slice off the padding tokens
-                probs.append(prob[0][1:-1, :])
+                preds.extend(list((preds > 0.5).cpu().numpy())) # Predicted labels
+                probs.extend(list(preds.cpu().numpy()))
         
         # Save the predictions for later inspection
 
