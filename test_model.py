@@ -155,7 +155,7 @@ def main(args):
     metrics = torchmetrics.MetricCollection(metrics)
 
     if args.p:
-        preds = []
+        preds_list = []
         probs = []
         
         model.eval()
@@ -181,7 +181,7 @@ def main(args):
                 ]
                 progress_bar.set_description(" ".join(message))
                 progress_bar.update(1)  
-                preds.extend(list((preds > 0.5).cpu().numpy())) # Predicted labels
+                preds_list.extend(list((preds > 0.5).cpu().numpy())) # Predicted labels
                 probs.extend(list(preds.cpu().numpy()))
         
         # Save the predictions for later inspection
