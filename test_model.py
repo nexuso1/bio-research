@@ -173,7 +173,7 @@ def main(args):
                 target = batch['labels'].view(-1)[mask]
                 logs = compute_metrics(preds.view(-1, 1), target, metrics)
                 loss_metric.update(loss)
-                roc.update(preds, target)
+                roc.update(preds, target.long())
                 logs['loss'] = loss_metric.compute()
                 message = [epoch_message] + [
                     f"dev_{k}={v:.{0<abs(v)<2e-4 and '3g' or '4f'}}"
