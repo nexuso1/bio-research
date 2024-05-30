@@ -137,6 +137,7 @@ def main(args):
         model = load_torch_model(args.i)
     tokenizer = AutoTokenizer.from_pretrained('facebook/esm2_t33_650M_UR50D')
     protein_df = load_prot_data(args.prots)
+    protein_df = remove_long_sequences(protein_df, 1024)
     clusters = pd.read_json(args.test_clusters)
     clusters = set(clusters[0])
     mask = protein_df['id'].apply(lambda x : x in clusters)
