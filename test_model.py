@@ -194,9 +194,9 @@ def main(args):
             fig.savefig(os.path.join(os.path.dirname(args.i), f'{name}.png'))
             fpr, tpr, thresholds = metric.compute()
             roc_df = pd.DataFrame.from_dict({
-                'fpr' : fpr,
-                'tpr' : tpr,
-                'threshold' : thresholds
+                'fpr' : fpr.cpu().numpy(),
+                'tpr' : tpr.cpu().numpy(),
+                'threshold' : thresholds.cpu().numpy()
             }, orient='columns')
             roc_df.to_json(os.path.join(os.path.dirname(args.i), f'{name}_df.json'), indent=4)
 
