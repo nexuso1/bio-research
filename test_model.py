@@ -27,7 +27,7 @@ parser.add_argument('--prots', type=str, help='Path to protein dataset, mapping 
 parser.add_argument('-p', type=bool, help='Whether the test data are proteins or not', default=True)
 parser.add_argument('--max_length', type=int, help='Maximum length of protein sequence to consider (longer sequences will be filtered out of the test data. Default is 1024.', default=1024)
 parser.add_argument('--chkpt', action='store_true', default=False, help='Model is a checkpoint')
-parser.add_argument('--batch_size', default=12, help='Batch size', type=int)
+parser.add_argument('--batch_size', default=1, help='Batch size', type=int)
 parser.add_argument('--num_workers', default=0, type=int, help='Num parallel workers')
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -153,6 +153,7 @@ def main(args):
     }
     loss_metric =  torchmetrics.MeanMetric().to(device)
     roc = torchmetrics.ROC(task='binary', ignore_index=-100).to(device)
+    prc = torchmetrics.PrecisionRecallCurve(task='binary', ignore_index=-100).to(device)
     metrics = torchmetrics.MetricCollection(metrics)
 
     if args.p:
@@ -175,6 +176,7 @@ def main(args):
                 logs = compute_metrics(preds.view(-1, 1), target, metrics)
                 loss_metric.update(loss)
                 roc.update(preds, target.long())
+                prc.update(preds, target.long())
                 logs['loss'] = loss_metric.compute()
                 message = [epoch_message] + [
                     f"dev_{k}={v:.{0<abs(v)<2e-4 and '3g' or '4f'}}"
@@ -182,21 +184,21 @@ def main(args):
                 ]
                 progress_bar.set_description(" ".join(message))
                 progress_bar.update(1)  
-                preds_list.extend(list((preds > 0.5).cpu().numpy())) # Predicted labels
+                preds_list.extend(list((preds > 0.5).cpu().numpy().astype('int'))) # Predicted labels
                 probs.extend(list(preds.cpu().numpy()))
-        
         # Save the predictions for later inspection
 
-        # ROC computation
-        fig, ax = roc.plot(score=True)
-        fig.savefig(os.path.join(os.path.dirname(args.i), 'roc.png'))
-        fpr, tpr, thresholds = roc.compute()
-        roc_df = pd.DataFrame.from_dict({
-            'fpr' : fpr,
-            'tpr' : tpr,
-            'threshold' : thresholds
-        }, orient='columns')
-        roc_df.to_json(os.path.join(os.path.dirname(args.i), 'roc_df.json'), indent=4)
+        # ROC and PRC computation
+        for metric, name in [(roc, 'roc'), (prc, 'prc')]:
+            fig, ax = metric.plot(score=True)
+            fig.savefig(os.path.join(os.path.dirname(args.i), f'{name}.png'))
+            fpr, tpr, thresholds = metric.compute()
+            roc_df = pd.DataFrame.from_dict({
+                'fpr' : fpr,
+                'tpr' : tpr,
+                'threshold' : thresholds
+            }, orient='columns')
+            roc_df.to_json(os.path.join(os.path.dirname(args.i), f'{name}_df.json'), indent=4)
 
         # Rest of probabilities
         dev_df.set_index('id')
