@@ -186,7 +186,7 @@ def main(args):
                 progress_bar.update(1)  
                 preds_list.extend(list((preds > 0.5).cpu().numpy().astype('int'))) # Predicted labels
                 probs.extend(list(preds.cpu().numpy()))
-                break
+
         # Save the predictions for later inspection
 
         # ROC and PRC computation
@@ -195,7 +195,7 @@ def main(args):
             fig.savefig(os.path.join(os.path.dirname(args.i), f'{name}.png'))
             fpr, tpr, thresholds = metric.compute()
             if thresholds.shape[0] < tpr.shape[0]:
-                thresholds = torch.concatenate([thresholds, torch.Tensor([1])], -1) # Last threshold is missing 
+                thresholds = torch.concatenate([thresholds, torch.Tensor([1]).to(device)], -1) # Last threshold is missing 
             df = pd.DataFrame.from_dict({
                 'fpr' : fpr.cpu().numpy(),
                 'tpr' : tpr.cpu().numpy(),
