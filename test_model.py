@@ -27,7 +27,7 @@ parser.add_argument('--prots', type=str, help='Path to protein dataset, mapping 
 parser.add_argument('-p', type=bool, help='Whether the test data are proteins or not', default=True)
 parser.add_argument('--max_length', type=int, help='Maximum length of protein sequence to consider (longer sequences will be filtered out of the test data. Default is 1024.', default=1024)
 parser.add_argument('--chkpt', action='store_true', default=False, help='Model is a checkpoint')
-parser.add_argument('--batch_size', default=1, help='Batch size', type=int)
+parser.add_argument('--batch_size', default=4, help='Batch size', type=int)
 parser.add_argument('--num_workers', default=0, type=int, help='Num parallel workers')
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -186,6 +186,7 @@ def main(args):
                 progress_bar.update(1)  
                 preds_list.extend(list((preds > 0.5).cpu().numpy().astype('int'))) # Predicted labels
                 probs.extend(list(preds.cpu().numpy()))
+                break
         # Save the predictions for later inspection
 
         # ROC and PRC computation
@@ -193,12 +194,14 @@ def main(args):
             fig, ax = metric.plot(score=True)
             fig.savefig(os.path.join(os.path.dirname(args.i), f'{name}.png'))
             fpr, tpr, thresholds = metric.compute()
-            roc_df = pd.DataFrame.from_dict({
+            if thresholds.shape[0] < tpr.shape[0]:
+                thresholds = torch.concatenate([thresholds, torch.Tensor([1])], -1) # Last threshold is missing 
+            df = pd.DataFrame.from_dict({
                 'fpr' : fpr.cpu().numpy(),
                 'tpr' : tpr.cpu().numpy(),
                 'threshold' : thresholds.cpu().numpy()
             }, orient='columns')
-            roc_df.to_json(os.path.join(os.path.dirname(args.i), f'{name}_df.json'), indent=4)
+            df.to_json(os.path.join(os.path.dirname(args.i), f'{name}_df.json'), indent=4)
 
         # Rest of probabilities
         dev_df.set_index('id')
