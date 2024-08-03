@@ -11,6 +11,7 @@ import torch.utils
 import torch.utils.data
 import torchmetrics
 import datetime
+import lora
 
 from tqdm.auto import tqdm
 from utils import remove_long_sequences, load_prot_data, Metadata, load_torch_model
@@ -19,6 +20,7 @@ from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
 from transformers import set_seed, EsmModel, AutoTokenizer
 from token_classifier_base import TokenClassifier, TokenClassifierConfig
+from classifiers import RNNTokenClassifer, RNNTokenClassiferConfig
 from prot_dataset import ProteinTorchDataset
 from functools import partial
 
@@ -38,11 +40,10 @@ parser.add_argument('--weight_decay', type=float, help='Weight decay', default=0
 parser.add_argument('--accum', type=int, help='Number of gradient accumulation steps', default=1)
 parser.add_argument('--rnn', action='store_true', help='Use an RNN classification head', default=False)
 parser.add_argument('--val_batch', type=int, help='Validation batch size', default=10)
-parser.add_argument('--hidden_size', type=int, help='Classifier hidden size. Relevant for cnn, rnn and simple classifiers', default=256)
+parser.add_argument('--hidden_size', type=int, help='Classifier hidden size', default=256)
 parser.add_argument('--lr', type=float, help='Learning rate', default=3e-4)
 parser.add_argument('-o', type=str, help='Output folder', default=None)
 parser.add_argument('-n', type=str, help='Model name', default='esm')
-parser.add_argument('--layers', type=str, help='Hidden layers for the linear classifier', default='[1024]')
 parser.add_argument('--compile', action='store_true', default=False, help='Compile the model')
 parser.add_argument('--lora', action='store_true', help='Use LoRA', default=False)
 parser.add_argument('--dropout', type=float, help='Dropout probability', default=0)
@@ -112,58 +113,13 @@ def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
             progress_bar.update(1)
     return logs
 
-def resume_training(args, train_ds, test_ds, model, last_epoch, optim, metadata=None):
-    metrics = {
-        'f1' : torchmetrics.F1Score(task='binary', ignore_index=-100).to(device),
-        'precision' : torchmetrics.Precision(task='binary',ignore_index=-100).to(device),
-        'recall' : torchmetrics.Recall(task='binary', ignore_index=-100).to(device),
-    }
-    loss_metric =  torchmetrics.MeanMetric().to(device)
-    metrics = torchmetrics.MetricCollection(metrics)
-    schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, args.lr)
-    history = []
-    for epoch in range(last_epoch + 1, args.epochs):
-        model.train()
-        metrics.reset()
-        epoch_message = f"Epoch={epoch+1}/{args.epochs}"
-        # Progress bar
-        data_and_progress = tqdm(
-            train_ds,
-            epoch_message,
-            unit="batch",
-            leave=False,
-        )
-        for i, batch in enumerate(train_ds):
-            batch = {k: v.to(device) for k, v in batch.items()}
-            loss, logits = model(training=True, **batch)
-            if args.accum == 1 or ( i > 0 and i % args.accum == 0):
-                loss.backward()
-                optim.step()
-                schedule.step(epoch)
-                optim.zero_grad()
-                # Metrics logging
-                logs = compute_metrics(logits, batch['labels'], metrics)
-                loss_metric.update(loss)
-                logs['loss'] = loss_metric.compute()
-                message = [epoch_message] + [
-                    f"{k}={v:.{0<abs(v)<2e-4 and '3g' or '4f'}}"
-                    for k, v in logs.items()
-                ]
-                data_and_progress.set_description(" ".join(message))
-            data_and_progress.update(1)
-
-        save_checkpoint(args, model, optim, epoch, loss, os.path.join(args.logdir, 'chkpt.pt'), metadata)
-        print(f'Epoch {epoch}, starting evaluation...')
-        eval_logs = eval_model(model, test_ds, epoch, metrics)
-        history.append(eval_logs)
-    return history, model
-
-def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : torch.nn.Module, lr, metadata : Metadata=None,seed=42):
+def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : torch.nn.Module, lr, metadata : Metadata=None, seed=42,
+                start_epoch=0, optim=None):
 
     # Set all random seeds
     set_seeds(seed)
 
-    optim = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=args.weight_decay)
+    optim = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=args.weight_decay) if optim is None else optim
 
     schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, len(train_ds) * args.epochs)
 
@@ -177,7 +133,7 @@ def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : torch.nn.Mod
 
     history = []
     # Train model
-    for epoch in range(args.epochs):
+    for epoch in range(start_epoch, args.epochs):
         model.train()
         metrics.reset()
         epoch_message = f"Epoch={epoch+1}/{args.epochs}"
@@ -188,20 +144,26 @@ def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : torch.nn.Mod
             unit="batch",
             leave=False,
         )
+
         for i, batch in enumerate(train_ds):
             batch = {k: v.to(device) for k, v in batch.items()}
             loss, logits = model(training=True, **batch)
-            if args.accum == 1 or ( i > 0 and i % args.accum == 0):
+
+            # Normalize the loss by the number of accumulation steps
+            loss = loss / args.accum
+
+            if args.accum == 1 or ( i > 0 and i % args.accum == 0) or (i + 1 == len(train_ds)):
                 loss.backward()
                 optim.step()
                 schedule.step(epoch)
                 optim.zero_grad()
+
                 # Metrics logging
                 logs = compute_metrics(logits, batch['labels'], metrics)
                 loss_metric.update(loss)
                 logs['loss'] = loss_metric.compute()
                 message = [epoch_message] + [
-                    f"{k}={v:.{0<abs(v)<2e-4 and '3g' or '4f'}}"
+                    f"{k}={v :.{0<abs(v)<2e-4 and '3g' or '4f'}}"
                     for k, v in logs.items()
                 ]
                 data_and_progress.set_description(" ".join(message))
@@ -241,8 +203,8 @@ def save_as_string(obj, path):
     with open(path, 'w') as f:
         json.dump(obj, f)
 
-def save_checkpoint(args, model : TokenClassifier, optim : torch.optim.Optimizer,
-                    epoch : int, loss, path, metadata  : Metadata = None):
+def save_checkpoint(args, model : TokenClassifier, config : TokenClassifierConfig, optim : torch.optim.Optimizer,
+                    epoch : int, loss, path : str, metadata  : Metadata = None):
     """
     Saves model checkpoint during training. Path should include the filename.
     """
@@ -251,6 +213,7 @@ def save_checkpoint(args, model : TokenClassifier, optim : torch.optim.Optimizer
     'optimizer_state_dict': optim.state_dict(),
     'model_state_dict': model.state_dict(),
     'args' : args,
+    'config' : config,
     'epoch' : epoch,
     'loss' : loss 
     }, path)
@@ -258,7 +221,7 @@ def save_checkpoint(args, model : TokenClassifier, optim : torch.optim.Optimizer
     if metadata is not None:
         metadata.save(os.path.dirname(path))
 
-def load_from_checkpoint(path, fine_tune=False, use_lora=False):
+def load_from_checkpoint(path):
     """
     Loads the model checkpoint from the given path. Creates a TokenClassifier instance, 
     with and passes it args from the checkpoint, and flags from the from the arguments.
@@ -270,14 +233,15 @@ def load_from_checkpoint(path, fine_tune=False, use_lora=False):
     chkpt = torch.load(path)
     args, epoch, loss = chkpt['args'], chkpt['epoch'], chkpt['loss']
     base, tokenizer = get_esm(args)
-    model = TokenClassifier(args, base, fine_tune=fine_tune, use_lora=use_lora)
+    config = chkpt['config']
+    model = TokenClassifier(config, base)
     model.load_state_dict(chkpt['model_state_dict'])
     model.to(device)
     optim = torch.optim.AdamW(model.parameters(),weight_decay=args.weight_decay)
     optim.load_state_dict(chkpt['optimizer_state_dict'])
     return model, optim, epoch, loss, args
 
-def save_model(args, model, name):
+def save_model(args, model : TokenClassifier, name : str):
     """
     Saves the model to the folder args.o if given, otherwise to args.logdir, with the given name.
     """
@@ -290,7 +254,7 @@ def save_model(args, model, name):
     if not os.path.exists(f'{folder}'):
         os.mkdir(f'{folder}')
 
-    torch.save(model, save_path)
+    model.save(save_path)
     print(f'Model saved to {save_path}')
 
 def prep_batch(data, tokenizer, ignore_label=-100):
@@ -333,16 +297,19 @@ def main(args):
 
     # Load ESM-2
     base, tokenizer = get_esm(args)
+
     # Load and preprocess data from the dataset
     data = load_prot_data(args.dataset_path)
     data = remove_long_sequences(data, args.max_length)
     #prepped_data = preprocess_data(data)
+
     # Load clustering information about proteins,
-    # And split the clusters into train and test sets
+    # and split the clusters into train and test sets
     clusters = load_clusters(args.clusters)
     train_clusters, test_clusters = split_train_test_clusters(args, clusters, test_size=0.2) # Split clusters into train and test sets
     train_prots, test_prots = get_train_test_prots(clusters, train_clusters, test_clusters) # Extract the train proteins and test proteins
     train_df, test_df = split_dataset(data, train_prots, test_prots) # Split data according to the protein ids
+
     print(f'Train dataset shape: {train_df.shape}')
     print(f'Test dataset shape: {test_df.shape}')
     
@@ -350,11 +317,6 @@ def main(args):
     test_path = f'./{args.o if args.o else args.logdir}/{args.n}_test_data.json'
     save_as_string(list(test_prots), test_path)
     print(f'Test prots saved to {test_path}')
-    
-    # train_dataset = create_dataset(tokenizer=tokenizer, seqs=list(train_df['sequence']), labels=list(train_df['label']),
-    #                             max_batch_residues=args.batch_size) # Create a huggingface dataset
-    # test_dataset = create_dataset(tokenizer=tokenizer, seqs=list(test_df['sequence']), labels=list(test_df['label']), 
-    #                             max_batch_residues=args.batch_size)
 
     train_dataset = ProteinTorchDataset(train_df)
     dev_dataset = ProteinTorchDataset(test_df)
@@ -373,8 +335,16 @@ def main(args):
         model = load_torch_model(args.model_path)
     else:
         # Create a classifier
-        model = TokenClassifier(args, base, use_lora=False, fine_tune=False)
-
+        config = RNNTokenClassiferConfig(1, loss=torch.nn.BCEWithLogitsLoss(pos_weight=args.pos_weight), hidden_size=args.hidden_size,
+                                             n_layers=args.rnn_layers)
+        if args.lora:
+            config.apply_lora = args.lora, 
+            config.lora_config=lora.MultiPurposeLoRAConfig(256)
+        
+        model = TokenClassifier(config, base)
+        if not args.lora:
+            model.set_base_requires_grad(False)
+    
     if args.compile:
         # Compile the model, useful in general on Ampere architectures and further
         compiled_model = torch.compile(model)
@@ -386,20 +356,20 @@ def main(args):
     # --- Training ---
     if args.checkpoint_path is not None:
         # Will potentially fine-tune the model, based on the loaded requires_grad params
-        history, model = resume_training(args, train, dev, model, epoch, optim, meta)
+        history, model = train_model(args, train, dev, model, lr = args.lr, start_epoch=epoch, optim=optim, meta=meta)
         args.fine_tune = prev_ft_val
         meta.data['history'] = history
     elif not args.fine_tune or args.fine_tune and not args.ft_only:
         history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr)
 
-    # --- Fine-tuning
+    # --- Fine-tuning ---
     if args.fine_tune:
         print(f'batch {args.batch_size} accum {args.accum} effective batch {args.accum * args.batch_size}')
         # Save model before fine-tuning
         save_model(args, model, f'{args.n}_pre_ft')
         meta.fine_tuning = True
         # Unfreeze base
-        model.unfreeze_base()
+        model.set_base_requires_grad(True)
 
         if args.lora:
             model.apply_lora()

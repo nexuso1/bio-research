@@ -7,7 +7,6 @@ from typing import Callable
 
 @dataclass
 class TokenClassifierConfig:
-    base_model : nn.Module
     n_labels : int
     lora_config : lora.MultiPurposeLoRAConfig | None = None
     apply_lora : bool = False
@@ -24,12 +23,12 @@ class TokenClassifier(nn.Module):
     ignore_index = -100 # Ignore labels with index -100
     token_model = None
 
-    def __init__(self, config : TokenClassifierConfig) -> None:
+    def __init__(self, config : TokenClassifierConfig, base_model : torch.nn.Module) -> None:
         super(TokenClassifier, self).__init__()
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.config = config
         # Embedding model
-        self.base = config.base_model
+        self.base = base_model
 
         if config.apply_lora:
             assert config.lora_config is not None
@@ -40,13 +39,23 @@ class TokenClassifier(nn.Module):
         
         self.loss = config.loss
 
+    def save(self, path):
+        torch.save({
+            'state_dict' : self.state_dict(),
+            'config' : self.config
+        }, path)
+
+    def load(self, path):
+        saved_model = torch.load(path)
+        self.load_state_dict(saved_model['state_dict'])
+        self.config = saved_model['config']
+
     def apply_lora(self, config=lora.MultiPurposeLoRAConfig(rank=256)):
         self.lora_config = config
         self.base = lora.modify_with_lora(self.base, self.lora_config)
 
         # Freeze base model parameters, except LoRA
-        for (param_name, param) in self.base.named_parameters():
-            param.requires_grad = False       
+        self.set_base_requires_grad(False)     
 
         for (param_name, param) in self.base.named_parameters():
                 if re.fullmatch(self.lora_config.trainable_param_names, param_name):

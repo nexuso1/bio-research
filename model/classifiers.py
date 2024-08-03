@@ -1,9 +1,11 @@
 from model.token_classifier_base import TokenClassifierConfig
 from token_classifier_base import TokenClassifier
 from modules import RNNClassifier
+from dataclasses import dataclass
 
 import torch
 
+@dataclass
 class RNNTokenClassiferConfig(TokenClassifierConfig):
     hidden_size : int
     n_layers : int
@@ -21,7 +23,6 @@ class RNNTokenClassifer(TokenClassifier):
         seq_reps= seq_reps.expand(-1, sequence_output.shape[1], -1) # (B, S, SR_DIM)
 
         return torch.cat([sequence_output, seq_reps], -1) # (B, S, CH + SR_DIM)
-
 
     def get_mean_sequence_reps(self, sequence_output : torch.Tensor, batch_lens):
         # NOTE: token 0 is always a beginning-of-sequence token, so the first residue is token 1.
