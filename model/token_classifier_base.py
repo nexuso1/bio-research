@@ -26,6 +26,7 @@ class TokenClassifier(nn.Module):
 
     def __init__(self, config : TokenClassifierConfig) -> None:
         super(TokenClassifier, self).__init__()
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.config = config
         # Embedding model
         self.base = config.base_model
@@ -74,7 +75,7 @@ class TokenClassifier(nn.Module):
 
         self.init_weights(self.classifier)
 
-    def classifier_features(self, inputs):
+    def classifier_features(self, inputs, attention_mask):
         """
         Function that prepares inputs to the classifier. By default, it does not do anything.
         Meant to be overriden for specific classifier implementations
@@ -150,5 +151,5 @@ class TokenClassifier(nn.Module):
         """
         outputs = self.base(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
         sequence_output = outputs[0]
-        classifier_features = self.classifier_features(sequence_output)
+        classifier_features = self.classifier_features(sequence_output, attention_mask)
         return self.classifier(classifier_features), outputs
