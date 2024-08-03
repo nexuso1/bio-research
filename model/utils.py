@@ -10,7 +10,7 @@ from datasets import Dataset
 
 def load_torch_model(path):
     import torch
-    from train_script import TokenClassifier
+    from token_classifier_base import TokenClassifier
     with open(path, 'rb') as f:
         model = torch.load(f)
 
