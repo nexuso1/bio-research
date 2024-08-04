@@ -49,4 +49,4 @@ class RNNTokenClassifer(TokenClassifier):
         outputs = self.base(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
         sequence_output = outputs[0]
         classifier_features = self.classifier_features(sequence_output, batch_lens=batch_lens)
-        return self.classifier(classifier_features, lengths=batch_lens), outputs
+        return self.classifier(classifier_features, lengths=torch.sum(attention_mask, -1)), outputs
