@@ -1,5 +1,4 @@
-from model.token_classifier_base import TokenClassifierConfig
-from token_classifier_base import TokenClassifier
+from token_classifier_base import TokenClassifier, TokenClassifierConfig
 from modules import RNNClassifier
 from dataclasses import dataclass
 
@@ -7,13 +6,13 @@ import torch
 
 @dataclass
 class RNNTokenClassiferConfig(TokenClassifierConfig):
-    hidden_size : int
-    n_layers : int
+    hidden_size : int = 256
+    n_layers : int = 2
     sr_dim : int = None
 
 class RNNTokenClassifer(TokenClassifier):
-    def __init__(self, config: RNNTokenClassiferConfig) -> None:
-        super().__init__(config)
+    def __init__(self, config: RNNTokenClassiferConfig, base_model) -> None:
+        super().__init__(config, base_model)
         seq_rep_dim = config.sr_dim if config.sr_dim else self.base.config.hidden_size
         self.classifier = RNNClassifier(self.base.config.hidden_size + seq_rep_dim, self.n_labels, config.hidden_size, config.n_layers)
 
@@ -28,9 +27,12 @@ class RNNTokenClassifer(TokenClassifier):
         # NOTE: token 0 is always a beginning-of-sequence token, so the first residue is token 1.
         pad_mask = torch.arange(0, sequence_output.shape[0], device=self.device)[:, None, None].expand_as(sequence_output)
         lens_reshaped = batch_lens[:, None, None].expand_as(pad_mask)
+        # Prepare the mask
         pad_mask = pad_mask > lens_reshaped # True if a given position is padding
         # Zero the padding values
         sequence_output[pad_mask] = 0
+        # Zero the BOS token
+        sequence_output[..., 0] = 0 
         # Calculate the sequence means
         seq_rep = torch.mean(sequence_output, 1)
         # Add the 'sequence' dim
@@ -40,5 +42,11 @@ class RNNTokenClassifer(TokenClassifier):
 
         return torch.cat([sequence_output, seq_rep], -1) # (B, S, 2CH)
     
-    def classifier_features(self, inputs, attention_mask):
-        self.get_mean_sequence_reps(inputs, torch.sum(attention_mask, -1).to(self.device))
+    def classifier_features(self, inputs, **kwargs):
+        return self.get_mean_sequence_reps(inputs, kwargs['batch_lens'].to(self.device))
+    
+    def forward(self,input_ids,  attention_mask, batch_lens, **kwargs):
+        outputs = self.base(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
+        sequence_output = outputs[0]
+        classifier_features = self.classifier_features(sequence_output, attention_mask, batch_lens=batch_lens)
+        return self.classifier(classifier_features), outputs

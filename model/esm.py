@@ -32,8 +32,8 @@ parser.add_argument('--epochs', type=int, help='Number of training epochs', defa
 parser.add_argument('--max_length', type=int, help='Maximum sequence length (shorter sequences will be pruned)', default=1024)
 parser.add_argument('--dataset_path', type=str, 
                      help='Path to the protein dataset. Expects a dataframe with columns ("id", "sequence", "sites"). "sequence" is the protein AA string, "sites" is a list of phosphorylation sites.',
-                     default='./phosphosite_sequences/phosphosite_df_small.json')
-parser.add_argument('--clusters', type=str, help='Path to clusters', default='cluster30.tsv')
+                     default='data/phosphosite_sequences/phosphosite_df_small.json')
+parser.add_argument('--clusters', type=str, help='Path to clusters', default='data/cluster30.tsv')
 parser.add_argument('--fine_tune', action='store_true', help='Use fine tuning on the base model or not. Default is False', default=False)
 parser.add_argument('--ft_only', action='store_true', help='Skip pre-training, only fine-tune', default=False)
 parser.add_argument('--weight_decay', type=float, help='Weight decay', default=0.004)
@@ -113,7 +113,7 @@ def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
             progress_bar.update(1)
     return logs
 
-def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : torch.nn.Module, lr, metadata : Metadata=None, seed=42,
+def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : TokenClassifier, lr, metadata : Metadata=None, seed=42,
                 start_epoch=0, optim=None):
 
     # Set all random seeds
@@ -147,7 +147,7 @@ def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : torch.nn.Mod
 
         for i, batch in enumerate(train_ds):
             batch = {k: v.to(device) for k, v in batch.items()}
-            loss, logits = model(training=True, **batch)
+            loss, logits = model.train_predict(**batch)
 
             # Normalize the loss by the number of accumulation steps
             loss = loss / args.accum
@@ -335,13 +335,14 @@ def main(args):
         model = load_torch_model(args.model_path)
     else:
         # Create a classifier
-        config = RNNTokenClassiferConfig(1, loss=torch.nn.BCEWithLogitsLoss(pos_weight=args.pos_weight), hidden_size=args.hidden_size,
-                                             n_layers=args.rnn_layers)
+        config = RNNTokenClassiferConfig(1, loss=torch.nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([args.pos_weight])),
+                                            hidden_size=args.hidden_size,
+                                            n_layers=args.rnn_layers)
         if args.lora:
             config.apply_lora = args.lora, 
             config.lora_config=lora.MultiPurposeLoRAConfig(256)
         
-        model = TokenClassifier(config, base)
+        model = RNNTokenClassifer(config, base)
         if not args.lora:
             model.set_base_requires_grad(False)
     

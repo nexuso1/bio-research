@@ -8,9 +8,9 @@ from typing import Callable
 @dataclass
 class TokenClassifierConfig:
     n_labels : int
+    loss : Callable[[torch.Tensor], torch.Tensor]
     lora_config : lora.MultiPurposeLoRAConfig | None = None
     apply_lora : bool = False
-    loss : Callable[[torch.Tensor], torch.Tensor]
 
 class TokenClassifier(nn.Module):
     """
@@ -84,7 +84,7 @@ class TokenClassifier(nn.Module):
 
         self.init_weights(self.classifier)
 
-    def classifier_features(self, inputs, attention_mask):
+    def classifier_features(self, inputs, **kwargs):
         """
         Function that prepares inputs to the classifier. By default, it does not do anything.
         Meant to be overriden for specific classifier implementations
@@ -151,7 +151,7 @@ class TokenClassifier(nn.Module):
             'outputs' : outputs
         }
 
-    def forward(self, input_ids=None, attention_mask=None, **kwargs ):
+    def forward(self, input_ids=None, attention_mask=None, **kwargs):
         """
         Forward pass of the model. Does not make any changes to train/eval status, and does
         not calculate loss.
@@ -160,5 +160,5 @@ class TokenClassifier(nn.Module):
         """
         outputs = self.base(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
         sequence_output = outputs[0]
-        classifier_features = self.classifier_features(sequence_output, attention_mask)
+        classifier_features = self.classifier_features(sequence_output, **kwargs)
         return self.classifier(classifier_features), outputs
