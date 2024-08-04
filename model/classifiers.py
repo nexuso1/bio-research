@@ -32,7 +32,7 @@ class RNNTokenClassifer(TokenClassifier):
         # Zero the padding values
         sequence_output[pad_mask] = 0
         # Zero the BOS token
-        sequence_output[..., 0] = 0 
+        sequence_output[:, 0, :] = 0 
         # Calculate the sequence means
         seq_rep = torch.mean(sequence_output, 1)
         # Add the 'sequence' dim
