@@ -48,5 +48,5 @@ class RNNTokenClassifer(TokenClassifier):
     def forward(self,input_ids,  attention_mask, batch_lens, **kwargs):
         outputs = self.base(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
         sequence_output = outputs[0]
-        classifier_features = self.classifier_features(sequence_output, attention_mask, batch_lens=batch_lens)
+        classifier_features = self.classifier_features(sequence_output, batch_lens=batch_lens)
         return self.classifier(classifier_features), outputs
