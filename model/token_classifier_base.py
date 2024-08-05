@@ -98,22 +98,41 @@ class TokenClassifier(nn.Module):
         for p in self.base.parameters():
           p.requires_grad = requires_grad
 
-    def predict(self, input_ids, attention_mask=None, return_dict=False, **kwargs) -> torch.Tensor:
+    def predict(self, input_ids, attention_mask=None, return_dict=False, labels=None, **kwargs) -> torch.Tensor:
         """
         Prediction in eval mode.
         Outputs are the final classification logits as a Tensor.
         """
         self.eval()
-        logits, outputs = self(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
-        if not return_dict:
-            return logits
-        
-        return {
-            'logits' : logits,
-            'hidden_states' : outputs.hidden_states,
-            'attentions' : outputs.attentions,
-            'outputs' : outputs
-        }
+        with torch.no_grad():
+            logits, outputs = self(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
+            res = logits
+            # Calculate the loss if labels are provided
+            if labels is not None:
+                if attention_mask is not None:
+                    active_loss = attention_mask.view(-1) == 1
+                    active_logits = logits.reshape(-1, self.n_labels)
+                    active_labels = torch.where(
+                        active_loss, labels.view(-1), torch.tensor(self.ignore_index).type_as(labels)
+                    )
+                    valid_logits=active_logits[active_labels!=-100].flatten()
+                    valid_labels=active_labels[active_labels!=-100]
+                    loss = self.loss(valid_logits, valid_labels)
+
+                else:
+                    loss = self.loss(logits.view(-1, self.n_labels), labels.view(-1))
+
+                res = (loss, logits)
+            
+            if not return_dict:
+                return res
+            
+            return {
+                'logits' : logits,
+                'hidden_states' : outputs.hidden_states,
+                'attentions' : outputs.attentions,
+                'outputs' : outputs
+            }
 
     def train_predict(self, input_ids : torch.Tensor, labels : torch.Tensor, attention_mask : torch.Tensor = None,
                       return_dict=False,  **kwargs):
