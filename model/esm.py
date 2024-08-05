@@ -97,7 +97,6 @@ def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
     with torch.no_grad():
         for batch in test_ds:
             batch = {k: v.to(device) for k, v in batch.items()}
-            # Model returns a tuple, logits are the first element when not given labels
             loss, logits = model.predict(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'], batch_lens=batch['batch_lens'], labels=batch['labels'])
             mask = batch['labels'].view(-1) != -100
             preds = torch.sigmoid(logits.view(-1)[mask])
