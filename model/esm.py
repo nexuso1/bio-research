@@ -361,7 +361,8 @@ def main(args):
         args.fine_tune = prev_ft_val
         meta.data['history'] = history
     elif not args.fine_tune or args.fine_tune and not args.ft_only:
-        history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr)
+        history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr,
+                                               metadata=meta)
 
     # --- Fine-tuning ---
     if args.fine_tune:
