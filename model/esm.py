@@ -169,7 +169,8 @@ def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : TokenClassif
                 data_and_progress.set_description(" ".join(message))
             data_and_progress.update(1)
 
-        save_checkpoint(args, model, optim, epoch, loss, os.path.join(args.logdir, 'chkpt.pt'), metadata)
+        save_checkpoint(args, model, config=model.config, optim=optim, epoch=epoch, loss=loss,
+                         path=os.path.join(args.logdir, 'chkpt.pt'), metadata=metadata)
         print(f'Epoch {epoch}, starting evaluation...')
         eval_logs = eval_model(model, dev_ds, epoch, metrics)
         history.append(eval_logs)
