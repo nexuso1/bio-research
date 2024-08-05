@@ -292,7 +292,7 @@ def main(args):
     
     # Create metadata
     meta = Metadata()
-    meta.data = args
+    meta.data = {'args' : args }
     meta.save(args.logdir)
 
     # Load ESM-2
@@ -369,7 +369,7 @@ def main(args):
         print(f'batch {args.batch_size} accum {args.accum} effective batch {args.accum * args.batch_size}')
         # Save model before fine-tuning
         save_model(args, model, f'{args.n}_pre_ft')
-        meta.fine_tuning = True
+        meta.data['fine_tuning'] = True
         # Unfreeze base
         model.set_base_requires_grad(True)
 
