@@ -242,7 +242,7 @@ def load_from_checkpoint(path):
     model.to(device)
     optim = torch.optim.AdamW(model.parameters(),weight_decay=args.weight_decay)
     optim.load_state_dict(chkpt['optimizer_state_dict'])
-    return model, optim, epoch, loss, args
+    return model, tokenizer, optim, epoch, loss, args
 
 def save_model(args, model : TokenClassifier, name : str):
     """
@@ -298,9 +298,6 @@ def main(args):
     meta.data = {'args' : args }
     meta.save(args.logdir)
 
-    # Load ESM-2
-    base, tokenizer = get_esm(args)
-
     # Load and preprocess data from the dataset
     data = load_prot_data(args.dataset_path)
     data = remove_long_sequences(data, args.max_length)
@@ -331,12 +328,15 @@ def main(args):
 
     if args.checkpoint_path is not None:
         prev_ft_val = args.fine_tune
-        model, optim, epoch, loss, args =  load_from_checkpoint(args.checkpoint_path)
+        model, tokenizer, optim, epoch, loss, args =  load_from_checkpoint(args.checkpoint_path)
      
     # Load a model saved with torch.save() 
     elif args.model_path is not None:
         model = load_torch_model(args.model_path)
     else:
+        # Load ESM-2
+        base, tokenizer = get_esm(args)
+
         # Create a classifier
         config = RNNTokenClassiferConfig(1, loss=torch.nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([args.pos_weight])),
                                             hidden_size=args.hidden_size,
