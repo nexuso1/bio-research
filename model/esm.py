@@ -301,6 +301,10 @@ def main(args):
 
     train, dev = prepare_datasets(args, tokenizer)
 
+    # --- Training ---
+    if not args.fine_tune or args.fine_tune and not args.ft_only:
+        history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr)
+
     # --- Fine-tuning ---
     if args.fine_tune:
         print(f'batch {args.batch_size} accum {args.accum} effective batch {args.accum * args.batch_size}')
