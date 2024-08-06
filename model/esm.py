@@ -203,6 +203,7 @@ def load_from_checkpoint(path):
     chkpt = torch.load(path)
     args, epoch, loss = chkpt['args'], chkpt['epoch'], chkpt['loss']
     print(f'Checkpoint args: {args}')
+    epoch += 1 # Checkpoints are created after a finished epoch
     print(f'Checkpoint epoch: {epoch}')
     base, tokenizer = get_esm(args)
     config = chkpt['config']
@@ -305,11 +306,12 @@ def main(args):
     train, dev = prepare_datasets(args, tokenizer)
 
     # --- Training ---
-    if args.checkpoint_path:
+    if args.checkpoint_path is not None:
+        print('Resuming from checkpoint...')
         history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr,
-                                              optim=optim, start_epoch = epoch, metadata=meta)
+                                              optim=optim, start_epoch=epoch, metadata=meta)
     elif not args.fine_tune or args.fine_tune and not args.ft_only:
-        history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr)
+        history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr, metadata=meta)
 
     # --- Fine-tuning ---
     if args.fine_tune:
