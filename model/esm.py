@@ -206,6 +206,8 @@ def load_from_checkpoint(path):
     print(f'Checkpoint epoch: {epoch}')
     base, tokenizer = get_esm(args)
     config = chkpt['config']
+    # TODO: REMOVE AFTER USE
+    config.cnn_layers = []
     print(f'Checkpoint config: {config}')
     model = RNNTokenClassifer(config, base)
     model.load_state_dict(chkpt['model_state_dict'])
