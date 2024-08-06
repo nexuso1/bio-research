@@ -232,8 +232,11 @@ def load_from_checkpoint(path):
     """
     chkpt = torch.load(path)
     args, epoch, loss = chkpt['args'], chkpt['epoch'], chkpt['loss']
+    print(f'Checkpoint args: {args}')
+    print(f'Checkpoint epoch: {epoch}')
     base, tokenizer = get_esm(args)
     config = chkpt['config']
+    print(f'Checkpoint config: {config}')
     model = TokenClassifier(config, base)
     model.load_state_dict(chkpt['model_state_dict'])
     model.to(device)
