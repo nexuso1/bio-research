@@ -237,7 +237,7 @@ def load_from_checkpoint(path):
     base, tokenizer = get_esm(args)
     config = chkpt['config']
     print(f'Checkpoint config: {config}')
-    model = TokenClassifier(config, base)
+    model = RNNTokenClassifer(config, base)
     model.load_state_dict(chkpt['model_state_dict'])
     model.to(device)
     optim = torch.optim.AdamW(model.parameters(),weight_decay=args.weight_decay)
