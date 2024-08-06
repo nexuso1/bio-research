@@ -54,7 +54,7 @@ parser.add_argument('--num_workers', help='Number of multiprocessign workers', t
 parser.add_argument('--rnn_layers', help='Number of RNN classifier layers', type=int, default=2)
 parser.add_argument('--checkpoint_path', help='Resume training from checkpoint', type=str, default=None)
 parser.add_argument('--model_path', help='Load model from this path (not a checkpoint)', type=str, default=None)
-parser.add_argument('--use_cnn', help='Use CNN seq reps', action='store_true', default=True)
+parser.add_argument('--use_cnn', help='Use CNN seq reps', action='store_true', default=False)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
