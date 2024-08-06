@@ -268,6 +268,7 @@ def main(args):
     )
 
     if args.checkpoint_path is not None:
+        checkpoint_loaded = True
         prev_ft_val = args.fine_tune
         model, tokenizer, optim, epoch, loss, args =  load_from_checkpoint(args.checkpoint_path)
      
@@ -306,7 +307,7 @@ def main(args):
     train, dev = prepare_datasets(args, tokenizer)
 
     # --- Training ---
-    if args.checkpoint_path is not None:
+    if checkpoint_loaded:
         print('Resuming from checkpoint...')
         history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr,
                                               optim=optim, start_epoch=epoch, metadata=meta)
