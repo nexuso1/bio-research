@@ -212,6 +212,9 @@ def load_from_checkpoint(path):
     model.to(device)
     optim = torch.optim.AdamW(model.parameters(),weight_decay=args.weight_decay)
     optim.load_state_dict(chkpt['optimizer_state_dict'])
+    if not chkpt['fine_tuning'] and not args.lora:
+        model.set_base_requires_grad(False)
+
     return model, tokenizer, optim, epoch, loss, args
 
 def save_model(args, model : TokenClassifier, name : str):
@@ -302,7 +305,10 @@ def main(args):
     train, dev = prepare_datasets(args, tokenizer)
 
     # --- Training ---
-    if not args.fine_tune or args.fine_tune and not args.ft_only:
+    if args.checkpoint_path:
+        history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr,
+                                              optim=optim, start_epoch = epoch, metadata=meta)
+    elif not args.fine_tune or args.fine_tune and not args.ft_only:
         history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr)
 
     # --- Fine-tuning ---
