@@ -19,10 +19,6 @@ def load_torch_model(path):
 def flatten_list(lst):
     return list(chain(*lst))
 
-def remove_long_sequences(df, max_length):
-    mask = df['sequence'].apply(lambda x: len(x) < max_length)
-    return df[mask]
-
 def preprocess_data(df : pd.DataFrame):
     """
     Preprocessing for Pbert/ProtT5
@@ -30,22 +26,6 @@ def preprocess_data(df : pd.DataFrame):
     df['sequence'] = df['sequence'].str.replace('|'.join(["O","B","U","Z"]),"X",regex=True)
     df['sequence'] = df.apply(lambda row : " ".join(row["sequence"]), axis = 1)
     return df
-
-def load_prot_data(dataset_path):
-    """
-    Loads the protein dataset and creates label vectors according to the 'sites' column, 
-    stored in a new column 'label'. Returns a dataframe with columns 'id', 'sequence' and 'label'
-    """
-    df = pd.read_json(dataset_path)
-    df = df.dropna()
-    df['sites'] = df['sites'].apply(lambda x: [eval(i) - 1 for i in x])
-    labels = [np.zeros(shape=len(s), dtype=np.uint8) for s in df['sequence']]
-    for i, l in enumerate(labels):
-        l[df.iloc[i]['sites']] = 1
-
-    df['label'] = labels
-    
-    return df[['id', 'sequence', 'label']]
 
 def save_as_string(obj, path):
     """
@@ -62,57 +42,6 @@ def load_tf_model(path):
     import tensorflow as tf
     
     return tf.keras.models.load_model(path)
-
-def load_clusters(path):
-    return pd.read_csv(path, sep='\t', names=['cluster_rep', 'cluster_mem'])
-
-def load_fasta(path : str):
-    seq_iterator = SeqIO.parse(open(path), 'fasta')
-    seq_dict = {}
-    for seq in seq_iterator:
-        # extract sequence id
-        try:
-            seq_id = seq.id.split('|')[0]
-        except IndexError:
-            # For some reason, some sequences do not contain uniprot ids, so skip them
-            continue
-        seq_dict[seq_id] = str(seq.seq)
-
-    return seq_dict
-
-def load_phospho(path : str):
-    """
-    Extracts phosphoryllation site indices from the dataset. 
-    Locations expected in the column 'MOD_RSD'.
-    
-    Returns a dictionary in format {ACC_ID : [list of phosphoryllation site indices]}
-    """
-    dataset = pd.read_csv(path, sep='\t', skiprows=3)
-    dataset['position'] = dataset['MOD_RSD'].str.extract(r'[\w]([\d]+)-p')
-    grouped = dataset.groupby(dataset['ACC_ID'])
-    res = {}
-    for id, group in grouped:
-        res[id] = group['position'].to_list()
-    
-    return res
-
-def load_phospho_epsd(path : str):
-    data = pd.read_csv(path, sep='\t')
-    data.index = data['EPSD ID']
-    grouped = data.groupby(data['EPSD ID'])
-
-    res = {}
-    for id, group in grouped:
-        res[id] = group['Position'].to_list()
-
-    return res
-
-def remove_long_sequences(df, max_length):
-    """
-    Remove sequences longer than 'max_length' from the dataframe. Expects a column 'sequence'.
-    """
-    mask = df['sequence'].apply(lambda x: len(x) < max_length)
-    return df[mask]
 
 class ProteinDataset(Dataset):
     def __init__(self,tokenizer, max_length,  

@@ -14,7 +14,8 @@ import datetime
 import lora
 
 from tqdm.auto import tqdm
-from utils import remove_long_sequences, load_prot_data, Metadata, load_torch_model
+from utils import Metadata, load_torch_model
+from data_loading import prepare_datasets
 from datasets import Dataset
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
@@ -72,21 +73,6 @@ def set_seeds(s):
     np.random.seed(s)
     random.seed(s)
     set_seed(s)
-
-def load_clusters(path):
-    return pd.read_csv(path, sep='\t', names=['cluster_rep', 'cluster_mem'])
-
-def split_train_test_clusters(args, clusters : pd.DataFrame, test_size : float):
-    reps = clusters['cluster_rep'].unique() # Unique cluster representatives
-    train, test = train_test_split(reps, test_size=test_size, random_state=args.seed)
-    return set(train), set(test)
-
-def get_train_test_prots(clusters, train_clusters, test_clusters):
-    train_mask = [x in train_clusters for x in clusters['cluster_rep']]
-    test_mask = [x in test_clusters for x in clusters['cluster_rep']]
-    train_prots = clusters['cluster_mem'][train_mask]
-    test_prots = clusters['cluster_mem'][test_mask]
-    return set(train_prots), set(test_prots)
 
 def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
     model.eval()
@@ -175,22 +161,6 @@ def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : TokenClassif
         history.append(eval_logs)
         metadata.data['history'] = history
     return history, model
-
-def preprocess_data(df : pd.DataFrame):
-    """
-    Preprocessing for Pbert/ProtT5. Replaces rare residues with 'X' and adds spaces between residues
-    """
-    df['sequence'] = df['sequence'].str.replace('|'.join(["O","B","U","Z"]),"X",regex=True)
-    df['sequence'] = df.apply(lambda row : " ".join(row["sequence"]), axis = 1)
-    return df
-
-def split_dataset(data : pd.DataFrame, train_clusters, test_clusters):
-    """
-    Splits data into train and test data according to train and test clusters.
-    """
-    train_mask = data['id'].apply(lambda x: x in train_clusters)
-    test_mask = data['id'].apply(lambda x: x in test_clusters)
-    return data[train_mask], data[test_mask]
 
 def save_as_string(obj, path):
     """
@@ -329,45 +299,7 @@ def main(args):
     meta.data = {'args' : args }
     meta.save(args.logdir)
 
-    # Load and preprocess data from the dataset
-    data = load_prot_data(args.dataset_path)
-    data = remove_long_sequences(data, args.max_length)
-    #prepped_data = preprocess_data(data)
-
-    # Load clustering information about proteins,
-    # and split the clusters into train and test sets
-    clusters = load_clusters(args.clusters)
-    train_clusters, test_clusters = split_train_test_clusters(args, clusters, test_size=0.2) # Split clusters into train and test sets
-    train_prots, test_prots = get_train_test_prots(clusters, train_clusters, test_clusters) # Extract the train proteins and test proteins
-    train_df, test_df = split_dataset(data, train_prots, test_prots) # Split data according to the protein ids
-
-    print(f'Train dataset shape: {train_df.shape}')
-    print(f'Test dataset shape: {test_df.shape}')
-    
-    # Save test proteins
-    test_path = f'./{args.o if args.o else args.logdir}/{args.n}_test_data.json'
-    save_as_string(list(test_prots), test_path)
-    print(f'Test prots saved to {test_path}')
-
-    train_dataset = ProteinTorchDataset(train_df)
-    dev_dataset = ProteinTorchDataset(test_df)
-
-    train = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer),
-                       persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
-    dev = DataLoader(dev_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer),
-                      persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
-
-
-    
-    # --- Training ---
-    if args.checkpoint_path is not None:
-        # Will potentially fine-tune the model, based on the loaded requires_grad params
-        history, model = train_model(args, train, dev, model, lr = args.lr, start_epoch=epoch, optim=optim, meta=meta)
-        args.fine_tune = prev_ft_val
-        meta.data['history'] = history
-    elif not args.fine_tune or args.fine_tune and not args.ft_only:
-        history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr,
-                                               metadata=meta)
+    train, dev = prepare_datasets(args, tokenizer)
 
     # --- Fine-tuning ---
     if args.fine_tune:
