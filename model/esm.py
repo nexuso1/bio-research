@@ -39,7 +39,6 @@ parser.add_argument('--fine_tune', action='store_true', help='Use fine tuning on
 parser.add_argument('--ft_only', action='store_true', help='Skip pre-training, only fine-tune', default=False)
 parser.add_argument('--weight_decay', type=float, help='Weight decay', default=0.004)
 parser.add_argument('--accum', type=int, help='Number of gradient accumulation steps', default=1)
-parser.add_argument('--rnn', action='store_true', help='Use an RNN classification head', default=False)
 parser.add_argument('--val_batch', type=int, help='Validation batch size', default=10)
 parser.add_argument('--hidden_size', type=int, help='Classifier hidden size', default=256)
 parser.add_argument('--lr', type=float, help='Learning rate', default=3e-4)
@@ -55,7 +54,7 @@ parser.add_argument('--num_workers', help='Number of multiprocessign workers', t
 parser.add_argument('--rnn_layers', help='Number of RNN classifier layers', type=int, default=2)
 parser.add_argument('--checkpoint_path', help='Resume training from checkpoint', type=str, default=None)
 parser.add_argument('--model_path', help='Load model from this path (not a checkpoint)', type=str, default=None)
-
+parser.add_argument('--use_cnn', help='Use CNN seq reps', action='store_true', default=True)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
@@ -266,7 +265,7 @@ def main(args):
             datetime.datetime.now().strftime("%Y_%m_%d_%H%M%S"),
         ),
     )
-
+    checkpoint_loaded = False
     if args.checkpoint_path is not None:
         checkpoint_loaded = True
         prev_ft_val = args.fine_tune
@@ -283,6 +282,9 @@ def main(args):
         config = RNNTokenClassiferConfig(1, loss=torch.nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([args.pos_weight])),
                                             hidden_size=args.hidden_size,
                                             n_layers=args.rnn_layers)
+        
+        if args.use_cnn:
+            config.sr_dim = 256
         if args.lora:
             config.apply_lora = args.lora, 
             config.lora_config=lora.MultiPurposeLoRAConfig(256)

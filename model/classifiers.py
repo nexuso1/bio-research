@@ -1,6 +1,7 @@
 from token_classifier_base import TokenClassifier, TokenClassifierConfig
 from modules import RNNClassifier
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from modules import Conv1dModel
 
 import torch
 
@@ -9,11 +10,26 @@ class RNNTokenClassiferConfig(TokenClassifierConfig):
     hidden_size : int = 256
     n_layers : int = 2
     sr_dim : int = None
+    cnn_layers : list[Conv1dModel.LayerConfig] = field(default_factory= lambda :[
+                Conv1dModel.LayerConfig(1280, 64, 7, 2, 2),
+                Conv1dModel.LayerConfig(64, 128, 5, 2, 2),
+                Conv1dModel.LayerConfig(128, 256, 3, 2, 2),
+                Conv1dModel.LayerConfig(256, 384, 3, 1, 2)
+            ])
 
 class RNNTokenClassifer(TokenClassifier):
     def __init__(self, config: RNNTokenClassiferConfig, base_model) -> None:
         super().__init__(config, base_model)
         seq_rep_dim = config.sr_dim if config.sr_dim else self.base.config.hidden_size
+        self.using_cnn = config.sr_dim is not None
+        if self.using_cnn:
+            self.cnn = Conv1dModel(config.cnn_layers, config.cnn_layers[-1].out_channels)
+            self.seq_rep_mlp = torch.nn.Sequential(
+                torch.nn.Flatten(),
+                torch.nn.BatchNorm1d(config.cnn_layers[-1].out_channels),
+                torch.nn.Linear(config.cnn_layers[-1].out_channels, seq_rep_dim),
+                torch.nn.ReLU()
+            )
         self.classifier = RNNClassifier(self.base.config.hidden_size + seq_rep_dim, self.n_labels, config.hidden_size, config.n_layers)
 
     def append_seq_reps(self, sequence_output, seq_reps):
@@ -42,11 +58,53 @@ class RNNTokenClassifer(TokenClassifier):
 
         return torch.cat([sequence_output, seq_rep], -1) # (B, S, 2CH)
     
+    def cnn_features(self, inputs):
+        x = self.cnn(inputs)
+        x = self.seq_rep_mlp(x)
+        return self.append_seq_reps(inputs, x)
+    
     def classifier_features(self, inputs, **kwargs):
+        if self.using_cnn:
+            return self.cnn_features(inputs)
+        
         return self.get_mean_sequence_reps(inputs, kwargs['batch_lens'].to(self.device))
     
     def forward(self,input_ids,  attention_mask, batch_lens, **kwargs):
         outputs = self.base(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
         sequence_output = outputs[0]
         classifier_features = self.classifier_features(sequence_output, batch_lens=batch_lens)
+        return self.classifier(classifier_features, lengths=torch.sum(attention_mask, -1)), outputs
+
+class RNNTokenClassfierCNNSeqRep(TokenClassifier):
+    def __init__(self, config: RNNTokenClassiferConfig, base_model) -> None:
+        super().__init__(config, base_model)
+        seq_rep_dim = config.sr_dim if config.sr_dim else self.base.config.hidden_size
+        self.classifier = RNNClassifier(self.base.config.hidden_size + seq_rep_dim, self.n_labels, config.hidden_size, config.n_layers)
+        cnn_config = config.cnn_layer_config
+        self.cnn = Conv1dModel(cnn_config, cnn_config[-1].out_channels)
+        self.seq_rep_mlp = torch.nn.Sequential(
+            torch.nn.AdaptiveMaxPool2d(),
+            torch.nn.Flatten(),
+            torch.nn.BatchNorm1d(cnn_config[-1].out_channels),
+            torch.nn.Linear(cnn_config[-1].out_channels, seq_rep_dim),
+            torch.nn.ReLU()
+        )
+        self.init_weights(self.sr_model)
+
+    def append_seq_reps(self, sequence_output, seq_reps):
+        seq_reps = seq_reps.unsqueeze(1) # (B, 1, SR_DIM)
+        # Repeat the means for every sequence element (i.e. sequence length-times),
+        seq_reps= seq_reps.expand(-1, sequence_output.shape[1], -1) # (B, S, SR_DIM)
+
+        return torch.cat([sequence_output, seq_reps], -1) # (B, S, CH + SR_DIM)
+
+    def classifier_features(self, inputs, **kwargs):
+        x = self.cnn(inputs)
+        x = self.seq_rep_mlp(x)
+        return self.append_seq_reps(inputs, x)
+    
+    def forward(self,input_ids,  attention_mask, batch_lens, **kwargs):
+        outputs = self.base(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
+        sequence_output = outputs[0]
+        classifier_features = self.classifier_features(sequence_output)
         return self.classifier(classifier_features, lengths=torch.sum(attention_mask, -1)), outputs

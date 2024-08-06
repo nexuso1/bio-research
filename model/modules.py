@@ -82,7 +82,8 @@ class Down1D(torch.nn.Module):
     def forward(self, inputs : torch.Tensor):
         x = torch.moveaxis(inputs, -1, 1)
         x = self.down(x)
-        x = self.layers[0](x)
+        if len(self.layers) > 0:
+            x = self.layers[0](x)
         for i in range(1, len(self.layers)):
             x = x + self.layers[i](x) # Residual connection
         return torch.moveaxis(x, 1, -1)
@@ -157,3 +158,15 @@ class Conv1dModel(torch.nn.Module):
 
         x = self.pool(torch.moveaxis(x, -1, 1))
         return x.squeeze()
+    
+class DummyModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, input):
+        zero = torch.Tensor([0])
+
+
+        return {
+            
+        }

@@ -70,7 +70,7 @@ class TokenClassifier(nn.Module):
         if isinstance(m, nn.Linear):
             torch.nn.init.xavier_uniform_(m.weight)
             m.bias.data.fill_(0)
-
+    
     def build_classifier(self, args):
         """
         Builds a classifier, connected to the output of the model. By default, 
