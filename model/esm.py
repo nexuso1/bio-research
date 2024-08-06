@@ -292,14 +292,42 @@ def main(args):
             datetime.datetime.now().strftime("%Y_%m_%d_%H%M%S"),
         ),
     )
+
+    if args.checkpoint_path is not None:
+        prev_ft_val = args.fine_tune
+        model, tokenizer, optim, epoch, loss, args =  load_from_checkpoint(args.checkpoint_path)
+     
+    # Load a model saved with torch.save() 
+    elif args.model_path is not None:
+        model = load_torch_model(args.model_path)
+    else:
+        # Load ESM-2
+        base, tokenizer = get_esm(args)
+
+        # Create a classifier
+        config = RNNTokenClassiferConfig(1, loss=torch.nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([args.pos_weight])),
+                                            hidden_size=args.hidden_size,
+                                            n_layers=args.rnn_layers)
+        if args.lora:
+            config.apply_lora = args.lora, 
+            config.lora_config=lora.MultiPurposeLoRAConfig(256)
+        
+        model = RNNTokenClassifer(config, base)
+        if not args.lora:
+            model.set_base_requires_grad(False)
+    
+    if args.compile:
+        # Compile the model, useful in general on Ampere architectures and further
+        compiled_model = torch.compile(model)
+        compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
+        training_model = compiled_model
+    else:
+        training_model = model.to(device)
     
     # Create metadata
     meta = Metadata()
     meta.data = {'args' : args }
     meta.save(args.logdir)
-
-    # Load ESM-2
-    base, tokenizer = get_esm(args)
 
     # Load and preprocess data from the dataset
     data = load_prot_data(args.dataset_path)
@@ -329,33 +357,7 @@ def main(args):
     dev = DataLoader(dev_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer),
                       persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
 
-    if args.checkpoint_path is not None:
-        prev_ft_val = args.fine_tune
-        model, tokenizer, optim, epoch, loss, args =  load_from_checkpoint(args.checkpoint_path)
-     
-    # Load a model saved with torch.save() 
-    elif args.model_path is not None:
-        model = load_torch_model(args.model_path)
-    else:
-        # Create a classifier
-        config = RNNTokenClassiferConfig(1, loss=torch.nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([args.pos_weight])),
-                                            hidden_size=args.hidden_size,
-                                            n_layers=args.rnn_layers)
-        if args.lora:
-            config.apply_lora = args.lora, 
-            config.lora_config=lora.MultiPurposeLoRAConfig(256)
-        
-        model = RNNTokenClassifer(config, base)
-        if not args.lora:
-            model.set_base_requires_grad(False)
-    
-    if args.compile:
-        # Compile the model, useful in general on Ampere architectures and further
-        compiled_model = torch.compile(model)
-        compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
-        training_model = compiled_model
-    else:
-        training_model = model.to(device)
+
     
     # --- Training ---
     if args.checkpoint_path is not None:
