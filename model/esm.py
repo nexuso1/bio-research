@@ -298,6 +298,9 @@ def main(args):
     meta.data = {'args' : args }
     meta.save(args.logdir)
 
+    # Load ESM-2
+    base, tokenizer = get_esm(args)
+
     # Load and preprocess data from the dataset
     data = load_prot_data(args.dataset_path)
     data = remove_long_sequences(data, args.max_length)
@@ -334,9 +337,6 @@ def main(args):
     elif args.model_path is not None:
         model = load_torch_model(args.model_path)
     else:
-        # Load ESM-2
-        base, tokenizer = get_esm(args)
-
         # Create a classifier
         config = RNNTokenClassiferConfig(1, loss=torch.nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([args.pos_weight])),
                                             hidden_size=args.hidden_size,
