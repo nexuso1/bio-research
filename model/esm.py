@@ -185,8 +185,7 @@ def save_checkpoint(args, model : TokenClassifier, config : TokenClassifierConfi
     'args' : args,
     'config' : config,
     'epoch' : epoch,
-    'loss' : loss 
-    'fine_tuning' : meta.data['fine_tuning']
+    'loss' : loss
     }, path)
 
     if metadata is not None: 
@@ -213,7 +212,7 @@ def load_from_checkpoint(path):
     model.to(device)
     optim = torch.optim.AdamW(model.parameters(),weight_decay=args.weight_decay)
     optim.load_state_dict(chkpt['optimizer_state_dict'])
-    if args.lora:
+    if not args.lora:
         model.set_base_requires_grad(False)
 
     return model, tokenizer, optim, epoch, loss, args
