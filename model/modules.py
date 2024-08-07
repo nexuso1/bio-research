@@ -140,10 +140,11 @@ class Unet1D(torch.nn.Module):
 
         x = self.final_conv(torch.moveaxis(x, -1, 1))
         return torch.moveaxis(x, 1, -1)
+    
+ConvLayerConfig = namedtuple('LayerConfig', 'in_channels, out_channels, kernel_size, num_layers, stride')
 
 class Conv1dModel(torch.nn.Module):
-    LayerConfig = namedtuple('LayerConfig', 'in_channels, out_channels, kernel_size, num_layers, stride')
-    def __init__(self, layer_configs : list[LayerConfig], out_dim : int) -> None:
+    def __init__(self, layer_configs : list[ConvLayerConfig], out_dim : int) -> None:
         super().__init__()
         self.downs = []
         for in_channels, out_channels, k, n, s in layer_configs:

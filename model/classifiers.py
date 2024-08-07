@@ -1,7 +1,7 @@
 from token_classifier_base import TokenClassifier, TokenClassifierConfig
 from modules import RNNClassifier
 from dataclasses import dataclass, field
-from modules import Conv1dModel
+from modules import Conv1dModel, ConvLayerConfig
 
 import torch
 
@@ -10,11 +10,11 @@ class RNNTokenClassiferConfig(TokenClassifierConfig):
     hidden_size : int = 256
     n_layers : int = 2
     sr_dim : int = None
-    cnn_layers : list[Conv1dModel.LayerConfig] = field(default_factory= lambda :[
-                Conv1dModel.LayerConfig(1280, 64, 7, 2, 2),
-                Conv1dModel.LayerConfig(64, 128, 5, 2, 2),
-                Conv1dModel.LayerConfig(128, 256, 3, 2, 2),
-                Conv1dModel.LayerConfig(256, 384, 3, 1, 2)
+    cnn_layers : list[ConvLayerConfig] = field(default_factory= lambda :[
+                ConvLayerConfig(1280, 64, 7, 2, 2),
+                ConvLayerConfig(64, 128, 5, 2, 2),
+                ConvLayerConfig(128, 256, 3, 2, 2),
+                ConvLayerConfig(256, 384, 3, 1, 2)
             ])
 
 class RNNTokenClassifer(TokenClassifier):
