@@ -1,4 +1,3 @@
-import pandas as pd
 import numpy as np
 import torch
 import random
@@ -17,13 +16,10 @@ from tqdm.auto import tqdm
 from utils import Metadata, load_torch_model
 from data_loading import prepare_datasets
 from datasets import Dataset
-from torch.utils.data import DataLoader
-from sklearn.model_selection import train_test_split
 from transformers import set_seed, EsmModel, AutoTokenizer
 from token_classifier_base import TokenClassifier, TokenClassifierConfig
 from classifiers import RNNTokenClassifer, RNNTokenClassiferConfig
-from prot_dataset import ProteinTorchDataset
-from functools import partial
+
 
 parser = argparse.ArgumentParser()
 
