@@ -1,5 +1,9 @@
 import torchmetrics
 import torch
+import sys
+
+sys.path.append('./model')
+sys.path.append('./data/phospho_lingo/')
 
 from tqdm import tqdm
 from argparse import ArgumentParser
@@ -8,6 +12,9 @@ from model.utils import load_torch_model
 from model.esm import load_from_checkpoint, compute_metrics
 import os
 import pandas as pd
+
+
+
 parser = ArgumentParser()
 
 parser.add_argument('--model_path', type=str, default='')
