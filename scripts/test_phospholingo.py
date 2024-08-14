@@ -10,7 +10,8 @@ from tqdm import tqdm
 from argparse import ArgumentParser
 from model.data_loading import load_phoshpolingo_dataset
 from model.utils import load_torch_model
-from model.esm import load_from_checkpoint, compute_metrics
+from model.esm import load_from_checkpoint, compute_metrics, get_esm
+from model.classifiers import RNNTokenClassifer
 import os
 import pandas as pd
 
@@ -20,7 +21,7 @@ parser.add_argument('--model_path', type=str, default='')
 parser.add_argument('--dataset_path', type=str, default='')
 parser.add_argument('--dataset_type', type=str, default='test', help='Dataset is either "train", "valid" or "test"')
 parser.add_argument('--chkpt', action='store_true', default=False, help='Model is a checkpoint')
-
+parser.add_argument('--esm_type', type=str, default='3B')
 def main(args):
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -29,8 +30,12 @@ def main(args):
     if args.chkpt:
         model = load_from_checkpoint(args.i)
     else:
-        model = load_torch_model(args.model_path)
-    
+        saved_model = load_torch_model(args.model_path)
+        state_dict, config = saved_model['state_dict'], saved_model['config']
+        esm, tokenizer = get_esm(args.esm_type)
+        model = RNNTokenClassifer(config, esm)
+        model.load_state_dict(state_dict)
+
     model.eval()
     dev = load_phoshpolingo_dataset(args.dataset_path, args.dataset_type, 4,)
     
