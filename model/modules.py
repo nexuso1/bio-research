@@ -1,6 +1,7 @@
 import torch
 import torch.utils
 from collections import namedtuple
+from dataclasses import dataclass
 
 def keras_init(module):
     """Initialize weights using the Keras defaults."""
@@ -18,7 +19,14 @@ def keras_init(module):
             "bias" in name and torch.nn.init.zeros_(parameter)
             if "bias" in name and isinstance(module, (torch.nn.LSTM, torch.nn.LSTMCell)):
                 parameter.data[module.hidden_size:module.hidden_size * 2] = 1
-
+@dataclass
+class ConvLayerConfig:
+    in_channels : int
+    out_channels : int
+    kernel_size : int
+    num_layers : int
+    stride : int
+    
 class ConvNormActiv1D(torch.nn.Module):
     def __init__(self, in_channels : int, out_channels : int, kernel_size : int, stride : int, padding : int) -> None:
         super().__init__()
@@ -109,8 +117,7 @@ class RNNClassifier(torch.nn.Module):
         return self.outputs(x)
 
 class Unet1D(torch.nn.Module):
-    LayerConfig = namedtuple('LayerConfig', 'in_channels, out_channels, kernel_size, num_layers, stride')
-    def __init__(self, layer_configs : list[LayerConfig], out_dim : int) -> None:
+    def __init__(self, layer_configs : list[ConvLayerConfig], out_dim : int) -> None:
         super().__init__()
         self.downs = []
         for in_channels, out_channels, k, n, s in layer_configs:
@@ -140,8 +147,7 @@ class Unet1D(torch.nn.Module):
 
         x = self.final_conv(torch.moveaxis(x, -1, 1))
         return torch.moveaxis(x, 1, -1)
-    
-ConvLayerConfig = namedtuple('LayerConfig', 'in_channels, out_channels, kernel_size, num_layers, stride')
+
 
 class Conv1dModel(torch.nn.Module):
     def __init__(self, layer_configs : list[ConvLayerConfig], out_dim : int) -> None:
