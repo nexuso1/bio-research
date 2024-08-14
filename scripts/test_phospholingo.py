@@ -14,8 +14,6 @@ from model.esm import load_from_checkpoint, compute_metrics
 import os
 import pandas as pd
 
-
-
 parser = ArgumentParser()
 
 parser.add_argument('--model_path', type=str, default='')
@@ -106,3 +104,7 @@ def main(args):
 
         # # Analyze performance on relevant AAs
         # analyze_preds(args, dev_df)
+
+if __name__ == '__main__':
+    args = parser.parse_args()
+    main(args)
