@@ -2,6 +2,7 @@ import torchmetrics
 import torch
 import sys
 
+sys.path.append('.')
 sys.path.append('./model')
 sys.path.append('./data/phospho_lingo/')
 
