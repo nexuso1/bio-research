@@ -26,7 +26,7 @@ class ConvLayerConfig:
     kernel_size : int
     num_layers : int
     stride : int
-    
+
 class ConvNormActiv1D(torch.nn.Module):
     def __init__(self, in_channels : int, out_channels : int, kernel_size : int, stride : int, padding : int) -> None:
         super().__init__()
@@ -153,8 +153,9 @@ class Conv1dModel(torch.nn.Module):
     def __init__(self, layer_configs : list[ConvLayerConfig], out_dim : int) -> None:
         super().__init__()
         self.downs = []
-        for in_channels, out_channels, k, n, s in layer_configs:
-            self.downs.append(Down1D(in_channels, out_channels, num_layers=n, kernel_size=k, stride=s))
+        for config in layer_configs:
+            self.downs.append(Down1D(config.in_channels, config.out_channels, num_layers=config.num_layers,
+                                      kernel_size=config.kernel_size, stride=config.stride))
         self.downs = torch.nn.ModuleList(self.downs)
         self.pool = torch.nn.AdaptiveMaxPool1d(1)
 
