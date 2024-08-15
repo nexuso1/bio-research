@@ -152,8 +152,8 @@ class TokenClassifier(nn.Module):
             active_labels = torch.where(
                 active_loss, labels.view(-1), torch.tensor(self.ignore_index).type_as(labels)
             )
-            valid_logits=active_logits[active_labels!=-100].flatten()
-            valid_labels=active_labels[active_labels!=-100]
+            valid_logits=active_logits[active_labels!=self.ignore_index].flatten()
+            valid_labels=active_labels[active_labels!=self.ignore_index]
             loss = self.loss(valid_logits, valid_labels)
             
         else:
