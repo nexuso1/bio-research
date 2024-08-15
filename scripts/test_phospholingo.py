@@ -37,7 +37,8 @@ def main(args):
         model.load_state_dict(state_dict)
 
     model.eval()
-    dev = load_phoshpolingo_dataset(args.dataset_path, args.dataset_type, 4,)
+    dev = load_phoshpolingo_dataset(args.dataset_path, args.dataset_type, 4,
+                                     tokenizer=tokenizer, num_workers=16, shuffle=False)
     
     metrics = {
         'f1' : torchmetrics.F1Score(task='binary', ignore_index=-1).to(device),
