@@ -15,7 +15,6 @@ def remove_long_sequences(df, max_length):
 
 
 def prep_pl_batch(data, tokenizer, ignore_label=-1):
-    print(data)
     ids, sequences, labels = zip(*data)
     batch = tokenizer(sequences, padding='longest', return_tensors="pt")
     sequence_length = batch["input_ids"].shape[1]
@@ -23,6 +22,8 @@ def prep_pl_batch(data, tokenizer, ignore_label=-1):
     batch['labels'] = np.array([[ignore_label] + list(label) + [ignore_label] * (sequence_length - len(label) - 1) for label in labels])
     batch['labels'] = torch.as_tensor(batch['labels'], dtype=torch.float32)
     batch['batch_lens'] = torch.as_tensor(np.array([len(x) for x in labels]))
+
+    return batch
 
 def load_phoshpolingo_dataset(path, train_valid_test, batch_size, tokenizer, num_workers=0, shuffle=True):
     from data.phospho_lingo.input_reader import SingleFastaDataset
