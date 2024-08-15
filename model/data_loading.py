@@ -15,6 +15,7 @@ def remove_long_sequences(df, max_length):
 
 
 def prep_pl_batch(data, tokenizer, ignore_label=-1):
+    print(data)
     ids, sequences, labels = zip(*data)
     batch = tokenizer(sequences, padding='longest', return_tensors="pt")
     sequence_length = batch["input_ids"].shape[1]
@@ -146,8 +147,9 @@ def prepare_datasets(args, tokenizer):
     # Load clustering information about proteins,
     # and split the clusters into train and test sets
     clusters = load_clusters(args.clusters)
-    train_clusters, test_clusters = split_train_test_clusters(args, clusters, test_size=0.2) # Split clusters into train and test sets
-    train_prots, test_prots = get_train_test_prots(clusters, train_clusters, test_clusters) # Extract the train proteins and test proteins
+    #train_clusters, test_clusters = split_train_test_clusters(args, clusters, test_size=0.2) # Split clusters into train and test sets
+    train_prots, test_prots = split_train_test_clusters(args, clusters, test_size=0.2) # Split clusters into train and test sets
+    # train_prots, test_prots = get_train_test_prots(clusters, train_clusters, test_clusters) # Extract the train proteins and test proteins
     train_df, test_df = split_dataset(data, train_prots, test_prots) # Split data according to the protein ids
 
     print(f'Train dataset shape: {train_df.shape}')
