@@ -25,7 +25,6 @@ class RNNTokenClassifer(TokenClassifier):
         if self.using_cnn:
             self.cnn = Conv1dModel(config.cnn_layers, config.cnn_layers[-1].out_channels)
             self.seq_rep_mlp = torch.nn.Sequential(
-                torch.nn.Flatten(),
                 torch.nn.BatchNorm1d(config.cnn_layers[-1].out_channels),
                 torch.nn.Linear(config.cnn_layers[-1].out_channels, seq_rep_dim),
                 torch.nn.ReLU()
@@ -60,6 +59,7 @@ class RNNTokenClassifer(TokenClassifier):
     
     def cnn_features(self, inputs):
         x = self.cnn(inputs)
+        x = x.flatten()
         x = self.seq_rep_mlp(x)
         return self.append_seq_reps(inputs, x)
     
@@ -73,38 +73,4 @@ class RNNTokenClassifer(TokenClassifier):
         outputs = self.base(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
         sequence_output = outputs[0]
         classifier_features = self.classifier_features(sequence_output, batch_lens=batch_lens)
-        return self.classifier(classifier_features, lengths=torch.sum(attention_mask, -1)), outputs
-
-class RNNTokenClassfierCNNSeqRep(TokenClassifier):
-    def __init__(self, config: RNNTokenClassiferConfig, base_model) -> None:
-        super().__init__(config, base_model)
-        seq_rep_dim = config.sr_dim if config.sr_dim else self.base.config.hidden_size
-        self.classifier = RNNClassifier(self.base.config.hidden_size + seq_rep_dim, self.n_labels, config.hidden_size, config.n_layers)
-        cnn_config = config.cnn_layer_config
-        self.cnn = Conv1dModel(cnn_config, cnn_config[-1].out_channels)
-        self.seq_rep_mlp = torch.nn.Sequential(
-            torch.nn.AdaptiveMaxPool2d(),
-            torch.nn.Flatten(),
-            torch.nn.BatchNorm1d(cnn_config[-1].out_channels),
-            torch.nn.Linear(cnn_config[-1].out_channels, seq_rep_dim),
-            torch.nn.ReLU()
-        )
-        self.init_weights(self.sr_model)
-
-    def append_seq_reps(self, sequence_output, seq_reps):
-        seq_reps = seq_reps.unsqueeze(1) # (B, 1, SR_DIM)
-        # Repeat the means for every sequence element (i.e. sequence length-times),
-        seq_reps= seq_reps.expand(-1, sequence_output.shape[1], -1) # (B, S, SR_DIM)
-
-        return torch.cat([sequence_output, seq_reps], -1) # (B, S, CH + SR_DIM)
-
-    def classifier_features(self, inputs, **kwargs):
-        x = self.cnn(inputs)
-        x = self.seq_rep_mlp(x)
-        return self.append_seq_reps(inputs, x)
-    
-    def forward(self,input_ids,  attention_mask, batch_lens, **kwargs):
-        outputs = self.base(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
-        sequence_output = outputs[0]
-        classifier_features = self.classifier_features(sequence_output)
         return self.classifier(classifier_features, lengths=torch.sum(attention_mask, -1)), outputs
