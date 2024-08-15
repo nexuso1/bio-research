@@ -230,22 +230,6 @@ def save_model(args, model : TokenClassifier, name : str):
     model.save(save_path)
     print(f'Model saved to {save_path}')
 
-def prep_batch(data, tokenizer, ignore_label=-1):
-    """
-    Collate function for a dataloader. "data" is a list of inputs.
-
-    Return a dictionary with keys [input_ids, labels, batch_lens]
-    """
-    sequences, labels = zip(*data)
-    batch = tokenizer(sequences, padding='longest', return_tensors="pt")
-    sequence_length = batch["input_ids"].shape[1]
-    # Pad the labels correctly
-    batch['labels'] = np.array([[ignore_label] + list(label) + [ignore_label] * (sequence_length - len(label) - 1) for label in labels])
-    batch['labels'] = torch.as_tensor(batch['labels'], dtype=torch.float32)
-    batch['batch_lens'] = torch.as_tensor(np.array([len(x) for x in labels]))
-
-    return batch
-
 def compute_metrics(y_pred, y, metrics : torchmetrics.MetricCollection):
         """Compute and return metrics given the inputs, predictions, and target outputs."""
         metrics.update(y_pred, y.unsqueeze(-1))
@@ -305,7 +289,7 @@ def main(args):
     meta.data = {'args' : args }
     meta.save(args.logdir)
 
-    train, dev = prepare_datasets(args, tokenizer)
+    train, dev = prepare_datasets(args, tokenizer, model.ignore_index)
 
     # --- Training ---
     if checkpoint_loaded:
