@@ -96,7 +96,7 @@ def main(args):
             'tpr' : tpr.cpu().numpy(),
             'threshold' : thresholds.cpu().numpy()
         }, orient='columns')
-        df.to_json(os.path.join(os.path.dirname(args.model_pathi), f'{name}_df.json'), indent=4)
+        df.to_json(os.path.join(os.path.dirname(args.model_path), f'{name}_df.json'), indent=4)
 
         # # Rest of probabilities
         # dev_df.set_index('id')
