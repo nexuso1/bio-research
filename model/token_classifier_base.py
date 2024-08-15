@@ -20,7 +20,7 @@ class TokenClassifier(nn.Module):
     Function set_base_training_status() can freeze/unfreeze the base model, meant to be set 
     by the user before training.
     """
-    ignore_index = -100 # Ignore labels with index -100
+    ignore_index = -1 # Ignore labels with index -100
     token_model = None
 
     def __init__(self, config : TokenClassifierConfig, base_model : torch.nn.Module) -> None:
@@ -115,8 +115,8 @@ class TokenClassifier(nn.Module):
                     active_labels = torch.where(
                         active_loss, labels.view(-1), torch.tensor(self.ignore_index).type_as(labels)
                     )
-                    valid_logits=active_logits[active_labels!=-100].flatten()
-                    valid_labels=active_labels[active_labels!=-100]
+                    valid_logits=active_logits[active_labels!=self.ignore_index].flatten()
+                    valid_labels=active_labels[active_labels!=self.ignore_index]
                     loss = self.loss(valid_logits, valid_labels)
 
                 else:
