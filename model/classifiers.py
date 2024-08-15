@@ -25,6 +25,7 @@ class RNNTokenClassifer(TokenClassifier):
         if self.using_cnn:
             self.cnn = Conv1dModel(config.cnn_layers, config.cnn_layers[-1].out_channels)
             self.seq_rep_mlp = torch.nn.Sequential(
+                torch.nn.Flatten(),
                 torch.nn.BatchNorm1d(config.cnn_layers[-1].out_channels),
                 torch.nn.Linear(config.cnn_layers[-1].out_channels, seq_rep_dim),
                 torch.nn.ReLU()
@@ -59,7 +60,6 @@ class RNNTokenClassifer(TokenClassifier):
     
     def cnn_features(self, inputs):
         x = self.cnn(inputs)
-        x = x.flatten()
         x = self.seq_rep_mlp(x)
         return self.append_seq_reps(inputs, x)
     

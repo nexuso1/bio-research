@@ -51,7 +51,7 @@ def load_prot_data(dataset_path):
     
     return df[['id', 'sequence', 'label']]
 
-def prep_batch(data, tokenizer, ignore_label=-100):
+def prep_batch(data, tokenizer, ignore_label=-1):
     """
     Collate function for a dataloader. "data" is a list of inputs.
 
@@ -139,7 +139,7 @@ def load_phospho_epsd(path : str):
 
     return res
 
-def prepare_datasets(args, tokenizer):
+def prepare_datasets(args, tokenizer, ignore_label):
     # Load and preprocess data from the dataset
     data = load_prot_data(args.dataset_path)
     data = remove_long_sequences(data, args.max_length)
@@ -164,9 +164,9 @@ def prepare_datasets(args, tokenizer):
     train_dataset = ProteinTorchDataset(train_df)
     dev_dataset = ProteinTorchDataset(test_df)
 
-    train = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer),
+    train = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=ignore_label),
                        persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
-    dev = DataLoader(dev_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer),
+    dev = DataLoader(dev_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=ignore_label),
                       persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
     
     return train, dev
