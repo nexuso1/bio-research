@@ -28,7 +28,7 @@ def main(args):
     print(device)
 
     if args.chkpt:
-        model = load_from_checkpoint(args.i)
+        model = load_from_checkpoint(args.model_path)
     else:
         saved_model = load_torch_model(args.model_path)
         state_dict, config = saved_model['state_dict'], saved_model['config']
@@ -87,7 +87,7 @@ def main(args):
     # ROC and PRC computation
     for metric, name in [(roc, 'roc'), (prc, 'prc')]:
         fig, ax = metric.plot(score=True)
-        fig.savefig(os.path.join(os.path.dirname(args.i), f'{name}.png'))
+        fig.savefig(os.path.join(os.path.dirname(args.model_path), f'{name}.png'))
         fpr, tpr, thresholds = metric.compute()
         if thresholds.shape[0] < tpr.shape[0]:
             thresholds = torch.concatenate([thresholds, torch.Tensor([1]).to(device)], -1) # Last threshold is missing 
@@ -96,7 +96,7 @@ def main(args):
             'tpr' : tpr.cpu().numpy(),
             'threshold' : thresholds.cpu().numpy()
         }, orient='columns')
-        df.to_json(os.path.join(os.path.dirname(args.i), f'{name}_df.json'), indent=4)
+        df.to_json(os.path.join(os.path.dirname(args.model_pathi), f'{name}_df.json'), indent=4)
 
         # # Rest of probabilities
         # dev_df.set_index('id')
