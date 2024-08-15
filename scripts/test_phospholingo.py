@@ -50,53 +50,52 @@ def main(args):
     prc = torchmetrics.PrecisionRecallCurve(task='binary', ignore_index=-1).to(device)
     metrics = torchmetrics.MetricCollection(metrics)
 
-    if args.p:
-        preds_list = []
-        probs = []
-        
-        model.eval()
-        metrics.reset()
+    preds_list = []
+    probs = []
+    
+    model.eval()
+    metrics.reset()
 
-        epoch_message = f""
-        progress_bar = tqdm(range(len(dev)))
-        with torch.no_grad():
-            for batch in dev:
-                batch = {k: v.to(device) for k, v in batch.items()}
-                # Model returns a tuple, logits are the first element when not given labels
-                loss, logits = model(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'], batch_lens=batch['batch_lens'], labels=batch['labels'])
-                mask = batch['labels'].view(-1) != -1
-                preds = torch.sigmoid(logits.view(-1)[mask])
-                target = batch['labels'].view(-1)[mask]
-                logs = compute_metrics(preds.view(-1, 1), target, metrics)
-                loss_metric.update(loss)
-                roc.update(preds, target.long())
-                prc.update(preds, target.long())
+    epoch_message = f""
+    progress_bar = tqdm(range(len(dev)))
+    with torch.no_grad():
+        for batch in dev:
+            batch = {k: v.to(device) for k, v in batch.items()}
+            # Model returns a tuple, logits are the first element when not given labels
+            loss, logits = model(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'], batch_lens=batch['batch_lens'], labels=batch['labels'])
+            mask = batch['labels'].view(-1) != -1
+            preds = torch.sigmoid(logits.view(-1)[mask])
+            target = batch['labels'].view(-1)[mask]
+            logs = compute_metrics(preds.view(-1, 1), target, metrics)
+            loss_metric.update(loss)
+            roc.update(preds, target.long())
+            prc.update(preds, target.long())
 
-                logs['loss'] = loss_metric.compute()
-                message = [epoch_message] + [
-                    f"dev_{k}={v:.{0<abs(v)<2e-4 and '3g' or '4f'}}"
-                    for k, v in logs.items()
-                ]
-                progress_bar.set_description(" ".join(message))
-                progress_bar.update(1)  
-                preds_list.extend(list((preds > 0.5).cpu().numpy().astype('int'))) # Predicted labels
-                probs.extend(list(preds.cpu().numpy()))
+            logs['loss'] = loss_metric.compute()
+            message = [epoch_message] + [
+                f"dev_{k}={v:.{0<abs(v)<2e-4 and '3g' or '4f'}}"
+                for k, v in logs.items()
+            ]
+            progress_bar.set_description(" ".join(message))
+            progress_bar.update(1)  
+            preds_list.extend(list((preds > 0.5).cpu().numpy().astype('int'))) # Predicted labels
+            probs.extend(list(preds.cpu().numpy()))
 
-        # Save the predictions for later inspection
+    # Save the predictions for later inspection
 
-        # ROC and PRC computation
-        for metric, name in [(roc, 'roc'), (prc, 'prc')]:
-            fig, ax = metric.plot(score=True)
-            fig.savefig(os.path.join(os.path.dirname(args.i), f'{name}.png'))
-            fpr, tpr, thresholds = metric.compute()
-            if thresholds.shape[0] < tpr.shape[0]:
-                thresholds = torch.concatenate([thresholds, torch.Tensor([1]).to(device)], -1) # Last threshold is missing 
-            df = pd.DataFrame.from_dict({
-                'fpr' : fpr.cpu().numpy(),
-                'tpr' : tpr.cpu().numpy(),
-                'threshold' : thresholds.cpu().numpy()
-            }, orient='columns')
-            df.to_json(os.path.join(os.path.dirname(args.i), f'{name}_df.json'), indent=4)
+    # ROC and PRC computation
+    for metric, name in [(roc, 'roc'), (prc, 'prc')]:
+        fig, ax = metric.plot(score=True)
+        fig.savefig(os.path.join(os.path.dirname(args.i), f'{name}.png'))
+        fpr, tpr, thresholds = metric.compute()
+        if thresholds.shape[0] < tpr.shape[0]:
+            thresholds = torch.concatenate([thresholds, torch.Tensor([1]).to(device)], -1) # Last threshold is missing 
+        df = pd.DataFrame.from_dict({
+            'fpr' : fpr.cpu().numpy(),
+            'tpr' : tpr.cpu().numpy(),
+            'threshold' : thresholds.cpu().numpy()
+        }, orient='columns')
+        df.to_json(os.path.join(os.path.dirname(args.i), f'{name}_df.json'), indent=4)
 
         # # Rest of probabilities
         # dev_df.set_index('id')
