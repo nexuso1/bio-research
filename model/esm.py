@@ -105,9 +105,9 @@ def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : TokenClassif
     schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, len(train_ds) * args.epochs)
 
     metrics = {
-        'f1' : torchmetrics.F1Score(task='binary', ignore_index=-100).to(device),
-        'precision' : torchmetrics.Precision(task='binary',ignore_index=-100).to(device),
-        'recall' : torchmetrics.Recall(task='binary', ignore_index=-100).to(device),
+        'f1' : torchmetrics.F1Score(task='binary', ignore_index=model.ignore_index).to(device),
+        'precision' : torchmetrics.Precision(task='binary',ignore_index=model.ignore_index).to(device),
+        'recall' : torchmetrics.Recall(task='binary', ignore_index=model.ignore_index).to(device),
     }
     loss_metric =  torchmetrics.MeanMetric().to(device)
     metrics = torchmetrics.MetricCollection(metrics)
@@ -230,7 +230,7 @@ def save_model(args, model : TokenClassifier, name : str):
     model.save(save_path)
     print(f'Model saved to {save_path}')
 
-def prep_batch(data, tokenizer, ignore_label=-100):
+def prep_batch(data, tokenizer, ignore_label=-1):
     """
     Collate function for a dataloader. "data" is a list of inputs.
 
