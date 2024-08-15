@@ -51,13 +51,14 @@ parser.add_argument('--rnn_layers', help='Number of RNN classifier layers', type
 parser.add_argument('--checkpoint_path', help='Resume training from checkpoint', type=str, default=None)
 parser.add_argument('--model_path', help='Load model from this path (not a checkpoint)', type=str, default=None)
 parser.add_argument('--use_cnn', help='Use CNN seq reps', action='store_true', default=False)
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
-def get_esm(args):
-    if args.type == '3B':
+def get_esm(type):
+    if type == '3B':
         model, tokenizer = EsmModel.from_pretrained('facebook/esm2_t36_3B_UR50D'), AutoTokenizer.from_pretrained('facebook/esm2_t36_3B_UR50D')
-    elif args.type == '15B':
+    elif type == '15B':
         model, tokenizer = EsmModel.from_pretrained('facebook/esm2_t48_15B_UR50D'), AutoTokenizer.from_pretrained('facebook/esm2_t48_15B_UR50D')
     else:
         model, tokenizer = EsmModel.from_pretrained('facebook/esm2_t33_650M_UR50D'), AutoTokenizer.from_pretrained('facebook/esm2_t33_650M_UR50D')
@@ -200,7 +201,7 @@ def load_from_checkpoint(path):
     print(f'Checkpoint args: {args}')
     epoch += 1 # Checkpoints are created after a finished epoch
     print(f'Checkpoint epoch: {epoch}')
-    base, tokenizer = get_esm(args)
+    base, tokenizer = get_esm(args.type)
     config = chkpt['config']
     print(f'Checkpoint config: {config}')
     model = RNNTokenClassifer(config, base)
@@ -286,6 +287,8 @@ def main(args):
             config.lora_config=lora.MultiPurposeLoRAConfig(256)
         
         model = RNNTokenClassifer(config, base)
+
+        # Freeze the base if we're not using lora (in that case, it is frozen when applying it)
         if not args.lora:
             model.set_base_requires_grad(False)
     
