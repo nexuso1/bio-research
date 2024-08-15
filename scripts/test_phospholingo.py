@@ -62,7 +62,7 @@ def main(args):
         for batch in dev:
             batch = {k: v.to(device) for k, v in batch.items()}
             # Model returns a tuple, logits are the first element when not given labels
-            loss, logits = model(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'], batch_lens=batch['batch_lens'], labels=batch['labels'])
+            loss, logits = model.predict(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'], batch_lens=batch['batch_lens'], labels=batch['labels'])
             mask = batch['labels'].view(-1) != -1
             preds = torch.sigmoid(logits.view(-1)[mask])
             target = batch['labels'].view(-1)[mask]
