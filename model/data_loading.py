@@ -1,6 +1,7 @@
 import pandas as pd
 import torch
 import numpy as np
+import json
 
 from prot_dataset import ProteinTorchDataset
 from sklearn.model_selection import train_test_split
@@ -8,6 +9,7 @@ from Bio import SeqIO
 from torch.utils.data import DataLoader
 from functools import partial
 from utils import save_as_string
+
 
 def remove_long_sequences(df, max_length):
     mask = df['sequence'].apply(lambda x: len(x) < max_length)
@@ -139,7 +141,7 @@ def load_phospho_epsd(path : str):
 
     return res
 
-def prepare_datasets(args, tokenizer, ignore_label):
+def prepare_datasets_old(args, tokenizer, ignore_label):
     # Load and preprocess data from the dataset
     data = load_prot_data(args.dataset_path)
     data = remove_long_sequences(data, args.max_length)
@@ -161,6 +163,29 @@ def prepare_datasets(args, tokenizer, ignore_label):
     save_as_string(list(test_prots), test_path)
     print(f'Test prots saved to {test_path}')
 
+    train_dataset = ProteinTorchDataset(train_df)
+    dev_dataset = ProteinTorchDataset(test_df)
+
+    train = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=ignore_label),
+                       persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
+    dev = DataLoader(dev_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=ignore_label),
+                      persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
+    
+    return train, dev
+
+def prepare_datasets(args, tokenizer, ignore_label):
+    prot_data = load_prot_data(args.prot_info_path)
+    with open(args.train_path, 'r') as f:
+        train_prots = json.load(f)
+
+    with open(args.test_path, 'r') as f:
+        test_prots = json.load(f)
+    
+    train_df, test_df = split_dataset(prot_data, train_prots, test_prots) # Split data according to the protein ids
+
+    print(f'Train dataset shape: {train_df.shape}')
+    print(f'Test dataset shape: {test_df.shape}')
+    
     train_dataset = ProteinTorchDataset(train_df)
     dev_dataset = ProteinTorchDataset(test_df)
 
