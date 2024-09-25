@@ -32,7 +32,7 @@ parser.add_argument('--prot_info_path', type=str,
                      default='data/phosphosite_sequences/phosphosite_df_small.json')
 parser.add_argument('--train_path', type=str, help='Path to train protein IDs, subset of IDs in the prot. info dataset. JSON list.',
                     default='data/cleaned_train_prots.json')
-parser.add_argument('--train_path', type=str, help='Path to test protein IDs, subset of IDs in the prot. info dataset. JSON list.',
+parser.add_argument('--test_path', type=str, help='Path to test protein IDs, subset of IDs in the prot. info dataset. JSON list.',
                     default='data/cleaned_test_prots.json')
 parser.add_argument('--fine_tune', action='store_true', help='Use fine tuning on the base model or not. Default is False', default=False)
 parser.add_argument('--ft_only', action='store_true', help='Skip pre-training, only fine-tune', default=False)
