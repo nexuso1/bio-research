@@ -156,11 +156,11 @@ def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : TokenClassif
 
         print(f'Epoch {epoch}, starting evaluation...')
         eval_logs = eval_model(model, dev_ds, epoch, metrics)
-
+        save_checkpoint(args, model, config=model.config, optim=optim, epoch=epoch, loss=loss,
+                                path=os.path.join(args.logdir, 'chkpt.pt'), metadata=metadata)
         # Save only the best models by evaluation F1 score
         if best_f1 < eval_logs['f1']:
-            save_checkpoint(args, model, config=model.config, optim=optim, epoch=epoch, loss=loss,
-                        path=os.path.join(args.logdir, 'chkpt.pt'), metadata=metadata)
+            save_model(args, model, f'{args.n}_train_best.pt')
         history.append(eval_logs)
         metadata.data['history'] = history
     return history, model
