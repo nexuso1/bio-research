@@ -17,7 +17,7 @@ def remove_long_sequences(df, max_length):
 
 
 def prep_pl_batch(data, tokenizer, ignore_label=-1):
-    ids, sequences, labels = zip(*data)
+    sequences, labels = zip(*data)
     batch = tokenizer(sequences, padding='longest', return_tensors="pt")
     sequence_length = batch["input_ids"].shape[1]
     # Pad the labels correctly

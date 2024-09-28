@@ -83,7 +83,7 @@ def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
         for batch in test_ds:
             batch = {k: v.to(device) for k, v in batch.items()}
             loss, logits = model.predict(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'], batch_lens=batch['batch_lens'], labels=batch['labels'])
-            mask = batch['labels'].view(-1) != model.ignore_label
+            mask = batch['labels'].view(-1) != model.ignore_index
             preds = torch.sigmoid(logits.view(-1)[mask])
             target = batch['labels'].view(-1)[mask]
             logs = compute_metrics(preds.view(-1, 1), target, metrics)
