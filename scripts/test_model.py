@@ -1,42 +1,35 @@
 import os
 import sys
 import pandas as pd
-import numpy as np
 import torchmetrics
 import torch
-import matplotlib.pyplot as plt
 
 sys.path.append('../') # Allows this script to see this folder
-sys.path.append('../model/')
 
 from tqdm import tqdm
-from torch.utils.data import DataLoader
-from functools import partial
 from model.esm import compute_metrics, get_esm
-from model.classifiers import RNNClassifier
+from model.classifiers import RNNClassifier, RNNTokenClassifer
 from argparse import ArgumentParser
 from model.utils import load_torch_model, preprocess_data
 from model.data_loading import remove_long_sequences, prepare_datasets, load_prot_data
-from model.prot_dataset import ProteinTorchDataset
-from transformers import AutoTokenizer
 from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
 
 parser = ArgumentParser()
 
 parser.add_argument('-a', type=bool, help='Analyze mode. Analyze results from an existing result dataframe. The -i argument will then be the dataframe path.', default=False)
-parser.add_argument('-i', type=str, help='Model or dataframe path', default='logs\esm.py-2024-05-10_210142\esm.pt.pt')
+parser.add_argument('--i', type=str, help='Model or dataframe path', default='logs\esm.py-2024-05-10_210142\esm.pt.pt')
 parser.add_argument('--max_length', type=int, help='Maximum length of protein sequence to consider (longer sequences will be filtered out of the test data. Default is 1024.', default=1024)
 parser.add_argument('--chkpt', action='store_true', default=False, help='Model is a checkpoint')
 parser.add_argument('--batch_size', default=8, help='Batch size', type=int)
 parser.add_argument('--num_workers', default=0, type=int, help='Num parallel workers')
 parser.add_argument('--prot_info_path', type=str, 
                      help='Path to the protein dataset. Expects a dataframe with columns ("id", "sequence", "sites"). "sequence" is the protein AA string, "sites" is a list of phosphorylation sites.',
-                     default='../data/phosphosite_sequences/phosphosite_df.json')
+                     default='../data/phosphosite_sequences/phosphosite_df_small.json')
 parser.add_argument('--train_path', type=str, help='Path to train protein IDs, subset of IDs in the prot. info dataset. JSON list.',
                     default='../data/cleaned_train_prots.json')
 parser.add_argument('--test_path', type=str, help='Path to test protein IDs, subset of IDs in the prot. info dataset. JSON list.',
                     default='../data/cleaned_test_prots.json')
-
+parser.add_argument('--type', default='650M', help='ESM type (650M/13B)', type=str)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 def save_preds(args, pred_df):
@@ -142,11 +135,11 @@ def main(args):
         return
 
     if args.chkpt:
-        model = load_from_checkpoint(args.i)
+        model_data = load_from_checkpoint(args.i)
     else:
-        model = load_torch_model(args.i)
+        model_data = load_torch_model(args.i)
     
-    tokenizer = AutoTokenizer.from_pretrained('facebook/esm2_t33_650M_UR50D')
+    base, tokenizer = get_esm(args.type)
     prot_info = load_prot_data(args.prot_info_path)
     _, dev, _, dev_dataset = prepare_datasets(args, tokenizer, ignore_label=-1, return_datasets=True)
     dev_df = dev_dataset.data 
@@ -163,6 +156,11 @@ def main(args):
     preds_list = []
     probs = []
     
+    config = model_data['config']
+    print(f'Checkpoint config: {config}')
+    model = RNNTokenClassifer(config, base)
+    model.load_state_dict(model_data['model_state_dict'])
+    model.to(device)
     model.eval()
     metrics.reset()
 
