@@ -144,14 +144,15 @@ def main(args):
     prot_info = load_prot_data(args.prot_info_path)
     _, dev, _, dev_dataset = prepare_datasets(args, tokenizer, ignore_label=-1, return_datasets=True)
     dev_df = dev_dataset.data 
+    ignore_idx = -1
     metrics = {
-        'f1' : torchmetrics.F1Score(task='binary', ignore_index=-100).to(device),
-        'precision' : torchmetrics.Precision(task='binary',ignore_index=-100).to(device),
-        'recall' : torchmetrics.Recall(task='binary', ignore_index=-100).to(device),
+        'f1' : torchmetrics.F1Score(task='binary', ignore_index=ignore_idx).to(device),
+        'precision' : torchmetrics.Precision(task='binary',ignore_index=ignore_idx).to(device),
+        'recall' : torchmetrics.Recall(task='binary', ignore_index=ignore_idx).to(device),
     }
     loss_metric =  torchmetrics.MeanMetric().to(device)
-    roc = torchmetrics.ROC(task='binary', ignore_index=-100).to(device)
-    prc = torchmetrics.PrecisionRecallCurve(task='binary', ignore_index=-100).to(device)
+    roc = torchmetrics.ROC(task='binary', ignore_index=ignore_idx).to(device)
+    prc = torchmetrics.PrecisionRecallCurve(task='binary', ignore_index=ignore_idx).to(device)
     metrics = torchmetrics.MetricCollection(metrics)
 
     preds_list = []
