@@ -5,7 +5,7 @@ import torchmetrics
 import torch
 
 sys.path.append('../') # Allows this script to see this folder
-
+sys.path.append('../model/')
 from tqdm import tqdm
 from model.esm import compute_metrics, get_esm
 from model.classifiers import RNNClassifier, RNNTokenClassifer
@@ -17,7 +17,7 @@ from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
 parser = ArgumentParser()
 
 parser.add_argument('-a', type=bool, help='Analyze mode. Analyze results from an existing result dataframe. The -i argument will then be the dataframe path.', default=False)
-parser.add_argument('--i', type=str, help='Model or dataframe path', default='logs\esm.py-2024-05-10_210142\esm.pt.pt')
+parser.add_argument('-i', type=str, help='Model or dataframe path', default='logs\esm.py-2024-05-10_210142\esm.pt.pt')
 parser.add_argument('--max_length', type=int, help='Maximum length of protein sequence to consider (longer sequences will be filtered out of the test data. Default is 1024.', default=1024)
 parser.add_argument('--chkpt', action='store_true', default=False, help='Model is a checkpoint')
 parser.add_argument('--batch_size', default=8, help='Batch size', type=int)
