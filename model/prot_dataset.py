@@ -10,7 +10,7 @@ class ProteinTorchDataset(Dataset):
     
     def __getitem__(self, index : int):
         row = self.data.iloc[index]
-        return row.sequence, row.label
+        return index, row.sequence, row.label
     
 class PhosphoLingoDataset(Dataset):
     def __init__(self, data : list[dict]) -> None:
