@@ -22,19 +22,17 @@ parser = ArgumentParser()
 
 parser.add_argument('-a', type=bool, help='Analyze mode. Analyze results from an existing result dataframe. The -i argument will then be the dataframe path.', default=False)
 parser.add_argument('--i', type=str, help='Model or dataframe path', default='logs\esm.py-2024-05-10_210142\esm.pt.pt')
-parser.add_argument('--test_clusters', type=str, help='Test cluster path', default='output\esm.pt_test_data.json')
-parser.add_argument('--prots', type=str, help='Path to protein dataset, mapping IDs to sequences.', default='./phosphosite_sequences/phosphosite_df.json')
 parser.add_argument('--max_length', type=int, help='Maximum length of protein sequence to consider (longer sequences will be filtered out of the test data. Default is 1024.', default=1024)
 parser.add_argument('--chkpt', action='store_true', default=False, help='Model is a checkpoint')
 parser.add_argument('--batch_size', default=8, help='Batch size', type=int)
 parser.add_argument('--num_workers', default=0, type=int, help='Num parallel workers')
 parser.add_argument('--prot_info_path', type=str, 
                      help='Path to the protein dataset. Expects a dataframe with columns ("id", "sequence", "sites"). "sequence" is the protein AA string, "sites" is a list of phosphorylation sites.',
-                     default='data/phosphosite_sequences/phosphosite_df_small.json')
+                     default='../data/phosphosite_sequences/phosphosite_df_small.json')
 parser.add_argument('--train_path', type=str, help='Path to train protein IDs, subset of IDs in the prot. info dataset. JSON list.',
-                    default='data/cleaned_train_prots.json')
+                    default='../data/cleaned_train_prots.json')
 parser.add_argument('--test_path', type=str, help='Path to test protein IDs, subset of IDs in the prot. info dataset. JSON list.',
-                    default='data/cleaned_test_prots.json')
+                    default='../data/cleaned_test_prots.json')
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
