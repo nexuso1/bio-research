@@ -6,6 +6,7 @@ import torch
 
 sys.path.append('../') # Allows this script to see this folder
 sys.path.append('../model/')
+
 from tqdm import tqdm
 from model.esm import compute_metrics, get_esm
 from model.classifiers import RNNClassifier, RNNTokenClassifer
@@ -24,7 +25,7 @@ parser.add_argument('--batch_size', default=8, help='Batch size', type=int)
 parser.add_argument('--num_workers', default=0, type=int, help='Num parallel workers')
 parser.add_argument('--prot_info_path', type=str, 
                      help='Path to the protein dataset. Expects a dataframe with columns ("id", "sequence", "sites"). "sequence" is the protein AA string, "sites" is a list of phosphorylation sites.',
-                     default='../data/phosphosite_sequences/phosphosite_df_small.json')
+                     default='../data/phosphosite_sequences/phosphosite_df.json')
 parser.add_argument('--train_path', type=str, help='Path to train protein IDs, subset of IDs in the prot. info dataset. JSON list.',
                     default='../data/cleaned_train_prots.json')
 parser.add_argument('--test_path', type=str, help='Path to test protein IDs, subset of IDs in the prot. info dataset. JSON list.',
