@@ -1,10 +1,12 @@
 import os
+import sys
 import pandas as pd
 import numpy as np
 import torchmetrics
 import torch
 import matplotlib.pyplot as plt
 
+sys.path.append('../model/') # Allows this script to see this folder
 
 from tqdm import tqdm
 from torch.utils.data import DataLoader
@@ -147,7 +149,6 @@ def main(args):
     prot_info = load_prot_data(args.prot_info_path)
     _, dev, _, dev_dataset = prepare_datasets(args, tokenizer, ignore_label=-1, return_datasets=True)
     dev_df = dev_dataset.data 
-    
     metrics = {
         'f1' : torchmetrics.F1Score(task='binary', ignore_index=-100).to(device),
         'precision' : torchmetrics.Precision(task='binary',ignore_index=-100).to(device),
