@@ -168,13 +168,9 @@ class Conv1dModel(torch.nn.Module):
         return x.squeeze()
     
 class DummyModel(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, config):
         super().__init__()
 
-    def forward(self, input):
+    def forward(self, *args, **kwargs):
         zero = torch.Tensor([0])
-
-
-        return {
-            
-        }
+        return zero, zero

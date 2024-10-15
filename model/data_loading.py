@@ -57,15 +57,17 @@ def prep_batch(data, tokenizer, ignore_label=-1):
     """
     Collate function for a dataloader. "data" is a list of inputs.
 
-    Return a dictionary with keys [input_ids, labels, batch_lens]
+    Return a dictionary with keys [input_ids, labels, batch_lens, indices]
     """
-    sequences, labels = zip(*data)
+    # Indices are for the protein dataframe
+    indices, sequences, labels = zip(*data)
     batch = tokenizer(sequences, padding='longest', return_tensors="pt")
     sequence_length = batch["input_ids"].shape[1]
     # Pad the labels correctly
     batch['labels'] = np.array([[ignore_label] + list(label) + [ignore_label] * (sequence_length - len(label) - 1) for label in labels])
     batch['labels'] = torch.as_tensor(batch['labels'], dtype=torch.float32)
     batch['batch_lens'] = torch.as_tensor(np.array([len(x) for x in labels]))
+    batch['indices'] = torch.as_tensor(np.array(indices, dtype=np.int32))
 
     return batch
 
@@ -173,7 +175,7 @@ def prepare_datasets_old(args, tokenizer, ignore_label):
     
     return train, dev
 
-def prepare_datasets(args, tokenizer, ignore_label):
+def prepare_datasets(args, tokenizer, ignore_label, return_datasets=False):
     prot_data = load_prot_data(args.prot_info_path)
     with open(args.train_path, 'r') as f:
         train_prots = json.load(f)
@@ -191,7 +193,8 @@ def prepare_datasets(args, tokenizer, ignore_label):
 
     train = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=ignore_label),
                        persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
-    dev = DataLoader(dev_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=ignore_label),
+    dev = DataLoader(dev_dataset, args.batch_size, shuffle=False, collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=ignore_label),
                       persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
-    
+    if return_datasets:
+        return train, dev, train_dataset, dev_dataset
     return train, dev
