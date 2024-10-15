@@ -160,7 +160,7 @@ def main(args):
     config = model_data['config']
     print(f'Checkpoint config: {config}')
     model = RNNTokenClassifer(config, base)
-    model.load_state_dict(model_data['model_state_dict'])
+    model.load_state_dict(model_data['state_dict'])
     model.to(device)
     model.eval()
     metrics.reset()
