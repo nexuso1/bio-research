@@ -74,3 +74,19 @@ class RNNTokenClassifer(TokenClassifier):
         sequence_output = outputs[0]
         classifier_features = self.classifier_features(sequence_output, batch_lens=batch_lens)
         return self.classifier(classifier_features, lengths=torch.sum(attention_mask, -1)), outputs
+
+class DummyRNNTokenClassifier(TokenClassifier):
+    def __init__(self, config: RNNTokenClassiferConfig, base_model) -> None:
+        super().__init__(config, base_model)
+        print(self.device)
+
+    def forward(self, input_ids, attention_mask, batch_lens, **kwargs):
+        return torch.zeros_like(input_ids)
+    
+    def predict(self, input_ids, attention_mask=None, return_dict=False, labels=None, **kwargs) -> torch.Tensor:
+        if labels is not None:
+            return torch.Tensor([0], device=self.device), torch.zeros_like(input_ids, device=self.device)
+        return torch.zeros_like(input_ids, device=self.device)
+    
+    def train_predict(self, input_ids: torch.Tensor, labels: torch.Tensor, attention_mask: torch.Tensor = None, return_dict=False, **kwargs):
+        self.predict(input_ids, attention_mask, return_dict, labels, kwargs)

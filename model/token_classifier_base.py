@@ -11,6 +11,7 @@ class TokenClassifierConfig:
     loss : Callable[[torch.Tensor], torch.Tensor]
     lora_config : lora.MultiPurposeLoRAConfig | None = None
     apply_lora : bool = False
+    base_type : str = '650M' # Type of the ESM base model, currently (650M, 13B)
 
 class TokenClassifier(nn.Module):
     """
@@ -177,7 +178,7 @@ class TokenClassifier(nn.Module):
 
         Returns (logits, outputs of the base model).
         """
-        outputs = self.base(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
+        outputs = self.base(input_ids=input_ids, attention_mask=attention_mask)
         sequence_output = outputs[0]
         classifier_features = self.classifier_features(sequence_output, **kwargs)
         return self.classifier(classifier_features), outputs

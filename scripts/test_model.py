@@ -3,22 +3,24 @@ import sys
 import pandas as pd
 import torchmetrics
 import torch
+import numpy as np
 
 sys.path.append('../') # Allows this script to see this folder
 sys.path.append('../model/')
 
 from tqdm import tqdm
 from model.esm import compute_metrics, get_esm
-from model.classifiers import RNNClassifier, RNNTokenClassifer
+from model.classifiers import RNNClassifier, RNNTokenClassifer, DummyRNNTokenClassifier
+from model.modules import DummyModule
 from argparse import ArgumentParser
 from model.utils import load_torch_model, preprocess_data
 from model.data_loading import remove_long_sequences, prepare_datasets, load_prot_data
-from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
+from sklearn.metrics import f1_score, accuracy_score, confusion_matrix, precision_score, recall_score
 
 parser = ArgumentParser()
 
 parser.add_argument('-a', type=bool, help='Analyze mode. Analyze results from an existing result dataframe. The -i argument will then be the dataframe path.', default=False)
-parser.add_argument('-i', type=str, help='Model or dataframe path', default='logs\esm.py-2024-05-10_210142\esm.pt.pt')
+parser.add_argument('-i', type=str, help='Model or dataframe path', default='../data/dummy_model.pt')
 parser.add_argument('--max_length', type=int, help='Maximum length of protein sequence to consider (longer sequences will be filtered out of the test data. Default is 1024.', default=1024)
 parser.add_argument('--chkpt', action='store_true', default=False, help='Model is a checkpoint')
 parser.add_argument('--batch_size', default=8, help='Batch size', type=int)
@@ -43,7 +45,7 @@ def save_preds(args, pred_df):
 
 def extract_labels_from_row(row, p):
     #idxs = [i for i in range(len(row['sequence'])) if row['sequence'][i] == p]
-    mask = row['sequence'] == p
+    mask = [row['sequence'][i] == p for i in range(len(row['sequence']))]
     # labels = [row['label'][i] for i in idxs]
     labels = row['label'][mask]
     #preds = [row['predictions'][i] for i in idxs]
@@ -51,8 +53,10 @@ def extract_labels_from_row(row, p):
     return labels, preds
 
 def analyze_preds(args, pred_df):
-    relevant_prots = ['T', 'S', 'Y']
+    relevant_prots = ['S', 'T', 'Y']
     non_canon_prots = ['H', 'C', 'B','R','D', 'N', 'K']
+    metric_functions = [accuracy_score, f1_score, precision_score, recall_score, confusion_matrix]
+    metric_names = ['Accuracy', 'F1', 'Precision', 'Recall', 'Confusion matrix']
     relevant_preds = [[] for p in relevant_prots]
     relevant_labels = [[] for p in relevant_prots]
     nc_preds = [[] for p in non_canon_prots]
@@ -73,27 +77,24 @@ def analyze_preds(args, pred_df):
 
     print('Usual phosphorylation AA results:')
     for i, p in enumerate(relevant_prots):
-        acc = accuracy_score(relevant_labels[i], relevant_preds[i])
-        f1 = f1_score(relevant_labels[i], relevant_preds[i])
-        cm = confusion_matrix(relevant_labels[i], relevant_preds[i])
         print(f'AA with FASTA code {p}:')
-        print(f'\tAccuracy: {acc}')
-        print(f'\tF1: {f1}')
-        print(f'\tConfusion matrix: {cm}')
+        for metric, name in zip(metric_functions, metric_names):
+            score = metric(relevant_labels[i], relevant_preds[i])
+            print(f'\t{name} : {score}')
+
         print(f'\tNumber of predictions: {len(relevant_preds[i])}')
         print(f'\tNumber of true labels: {len(relevant_labels[i])}')
 
     print('Non-canon phosphorylation AA results:')
-    for i, p in enumerate(non_canon_prots):
-        acc = accuracy_score(nc_labels[i], nc_preds[i])
-        f1 = f1_score(nc_labels[i], nc_preds[i])
-        cm = confusion_matrix(relevant_labels[i], relevant_preds[i])
+    print('Usual phosphorylation AA results:')
+    for i, p in enumerate(relevant_prots):
         print(f'AA with FASTA code {p}:')
-        print(f'\tAccuracy: {acc}')
-        print(f'\tConfusion matrix: {cm}')
-        print(f'\tF1: {f1}')
-        print(f'\tNumber of predictions: {len(nc_preds[i])}')
-        print(f'\tNumber of true labels: {len(nc_labels[i])}')
+        for metric, name in zip(metric_functions, metric_names):
+            score = metric(relevant_labels[i], relevant_preds[i])
+            print(f'\t{name} : {score}')
+
+        print(f'\tNumber of predictions: {len(relevant_preds[i])}')
+        print(f'\tNumber of true labels: {len(relevant_labels[i])}')
 
 def prepare_prot_df(args, protein_df):
     protein_ids = pd.read_json(args.t, typ='series', orient='records')
@@ -156,10 +157,10 @@ def main(args):
     metrics = torchmetrics.MetricCollection(metrics)
 
     preds_list = []
-    probs = []
+    probs_list = []
     
     config = model_data['config']
-    print(f'Checkpoint config: {config}')
+    print(f'Loaded config: {config}')
     model = RNNTokenClassifer(config, base)
     model.load_state_dict(model_data['state_dict'])
     model.to(device)
@@ -188,17 +189,24 @@ def main(args):
             ]
             progress_bar.set_description(" ".join(message))
             progress_bar.update(1)  
-            preds_list.extend(list((preds > 0.5).cpu().numpy().astype('int'))) # Predicted labels
-            probs.extend(list(preds.cpu().numpy()))
 
-
+            # Extract the predicitions
+            valid_logits = logits[batch['labels'] != -1] # Gather valid logits
+            indices = np.cumsum(batch['batch_lens'], 0) # Indices into gathered logits according to batch lengths
+            probs = np.split(valid_logits.cpu().numpy(), indices)[:-1] # Split them according to the batch lenghts, last element is extra
+            preds = np.split((valid_logits > 0.5).cpu().numpy().astype('int'), indices)[:-1]
+            preds_list.extend(preds) # Predicted labels
+            probs_list.extend(probs) # Predicted probabilites
 
     # ROC and PRC computation
     for metric, name in [(roc, 'roc'), (prc, 'prc')]:
         fig, ax = metric.plot(score=True)
         fig.savefig(os.path.join(os.path.dirname(args.i), f'{name}.png'))
         fpr, tpr, thresholds = metric.compute()
-        if thresholds.shape[0] < tpr.shape[0]:
+        # Check if the last threshold is missing
+        if thresholds.nelement() == 1 or thresholds.shape[0] < tpr.shape[0]:
+            if thresholds.nelement() == 1:
+                thresholds = thresholds.unsqueeze(0)
             thresholds = torch.concatenate([thresholds, torch.Tensor([1]).to(device)], -1) # Last threshold is missing 
         df = pd.DataFrame.from_dict({
             'fpr' : fpr.cpu().numpy(),
@@ -209,8 +217,8 @@ def main(args):
 
     # Rest of probabilities
     dev_df.set_index('id')
-    dev_df['probabilities'] = probs
-    dev_df['predictions'] = preds
+    dev_df['probabilities'] = probs_list
+    dev_df['predictions'] = preds_list
     dev_df['sequence'] = prot_info.loc[dev_df.index]['sequence'] # Return sequences to their original form
 
     # Save the predictions for later inspection

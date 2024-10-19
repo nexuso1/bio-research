@@ -161,6 +161,7 @@ def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : TokenClassif
         # Save only the best models by evaluation F1 score
         if best_f1 < eval_logs['f1']:
             save_model(args, model, f'{args.n}_train_best.pt')
+            best_f1 = eval_logs['f1']
         history.append(eval_logs)
         metadata.data['history'] = history
     return history, model
@@ -258,7 +259,8 @@ def main(args):
         checkpoint_loaded = True
         prev_ft_val = args.fine_tune
         model, tokenizer, optim, epoch, loss, args =  load_from_checkpoint(args.checkpoint_path)
-     
+    
+    
     # Load a model saved with torch.save() 
     elif args.model_path is not None:
         model = load_torch_model(args.model_path)
@@ -282,6 +284,8 @@ def main(args):
         # Freeze the base if we're not using lora (in that case, it is frozen when applying it)
         if not args.lora:
             model.set_base_requires_grad(False)
+
+    print(f'batch {args.batch_size} accum {args.accum} effective batch {args.accum * args.batch_size}')
     
     if args.compile:
         # Compile the model, useful in general on Ampere architectures and further
@@ -308,7 +312,7 @@ def main(args):
 
     # --- Fine-tuning ---
     if args.fine_tune:
-        print(f'batch {args.batch_size} accum {args.accum} effective batch {args.accum * args.batch_size}')
+        
         # Save model before fine-tuning
         save_model(args, model, f'{args.n}_pre_ft')
         meta.data['fine_tuning'] = True
