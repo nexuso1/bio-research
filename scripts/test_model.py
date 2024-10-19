@@ -36,10 +36,7 @@ parser.add_argument('--type', default='650M', help='ESM type (650M/13B)', type=s
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 def save_preds(args, pred_df):
-    model_name = os.path.basename(args.i)
-    if not os.path.exists('./output/'):
-        os.mkdir('./output')
-    path = f'./output/{model_name}_preds.json'
+    path = os.path.join(os.path.dirname(args.i), 'preds.json')
     pred_df.to_json(path)
     print(f'Results saved to {path}')
 
@@ -84,6 +81,13 @@ def analyze_preds(args, pred_df):
 
         print(f'\tNumber of predictions: {len(relevant_preds[i])}')
         print(f'\tNumber of true labels: {len(relevant_labels[i])}')
+
+    print("S, T combined results:")
+    combined_labels = relevant_labels[0] + relevant_labels[1]
+    combined_preds = relevant_preds[0] + relevant_preds[1]
+    for metric, name in zip(metric_functions, metric_names):
+            score = metric(combined_labels, combined_preds)
+            print(f'\t{name} : {score}')
 
     print('Non-canon phosphorylation AA results:')
     print('Usual phosphorylation AA results:')
@@ -142,6 +146,7 @@ def main(args):
         model_data = load_torch_model(args.i)
     
     base, tokenizer = get_esm(args.type)
+    # base = DummyModule(torch.Tensor([1, 1]))
     prot_info = load_prot_data(args.prot_info_path)
     _, dev, _, dev_dataset = prepare_datasets(args, tokenizer, ignore_label=-1, return_datasets=True)
     dev_df = dev_dataset.data 
