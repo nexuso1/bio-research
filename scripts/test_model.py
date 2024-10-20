@@ -10,7 +10,7 @@ sys.path.append('../model/')
 
 from tqdm import tqdm
 from model.esm import compute_metrics, get_esm
-from model.classifiers import RNNClassifier, RNNTokenClassifer, DummyRNNTokenClassifier
+from model.classifiers import RNNClassifier, RNNTokenClassifier, DummyRNNTokenClassifier
 from model.modules import DummyModule
 from argparse import ArgumentParser
 from model.utils import load_torch_model, preprocess_data
@@ -166,7 +166,7 @@ def main(args):
     
     config = model_data['config']
     print(f'Loaded config: {config}')
-    model = RNNTokenClassifer(config, base)
+    model = RNNTokenClassifier(config, base)
     model.load_state_dict(model_data['state_dict'])
     model.to(device)
     model.eval()
@@ -197,7 +197,7 @@ def main(args):
 
             # Extract the predicitions
             valid_logits = logits[batch['labels'] != -1] # Gather valid logits
-            indices = np.cumsum(batch['batch_lens'], 0) # Indices into gathered logits according to batch lengths
+            indices = np.cumsum(batch['batch_lens'].cpu().numpy(), 0) # Indices into gathered logits according to batch lengths
             probs = np.split(valid_logits.cpu().numpy(), indices)[:-1] # Split them according to the batch lenghts, last element is extra
             preds = np.split((valid_logits > 0.5).cpu().numpy().astype('int'), indices)[:-1]
             preds_list.extend(preds) # Predicted labels

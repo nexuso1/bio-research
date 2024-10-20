@@ -17,7 +17,7 @@ class RNNTokenClassiferConfig(TokenClassifierConfig):
                 ConvLayerConfig(256, 384, 3, 1, 2)
             ])
 
-class RNNTokenClassifer(TokenClassifier):
+class RNNTokenClassifier(TokenClassifier):
     def __init__(self, config: RNNTokenClassiferConfig, base_model) -> None:
         super().__init__(config, base_model)
         seq_rep_dim = config.sr_dim if config.sr_dim else self.base.config.hidden_size
