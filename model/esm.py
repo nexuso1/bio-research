@@ -18,7 +18,7 @@ from data_loading import prepare_datasets
 from datasets import Dataset
 from transformers import set_seed, EsmModel, AutoTokenizer
 from token_classifier_base import TokenClassifier, TokenClassifierConfig
-from classifiers import RNNTokenClassifer, RNNTokenClassiferConfig
+from classifiers import RNNTokenClassifier, RNNTokenClassiferConfig
 
 
 parser = argparse.ArgumentParser()
@@ -54,6 +54,7 @@ parser.add_argument('--rnn_layers', help='Number of RNN classifier layers', type
 parser.add_argument('--checkpoint_path', help='Resume training from checkpoint', type=str, default=None)
 parser.add_argument('--model_path', help='Load model from this path (not a checkpoint)', type=str, default=None)
 parser.add_argument('--use_cnn', help='Use CNN seq reps', action='store_true', default=False)
+parser.add_argument('--alt_labels', help='Train only on S, T and Y proteins', action='store_true', default=False)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
@@ -212,7 +213,7 @@ def load_from_checkpoint(path):
     base, tokenizer = get_esm(args.type)
     config = chkpt['config']
     print(f'Checkpoint config: {config}')
-    model = RNNTokenClassifer(config, base)
+    model = RNNTokenClassifier(config, base)
     model.load_state_dict(chkpt['model_state_dict'])
     model.to(device)
     optim = torch.optim.AdamW(model.parameters(),weight_decay=args.weight_decay)
@@ -279,7 +280,7 @@ def main(args):
             config.apply_lora = args.lora, 
             config.lora_config=lora.MultiPurposeLoRAConfig(256)
         
-        model = RNNTokenClassifer(config, base)
+        model = RNNTokenClassifier(config, base)
 
         # Freeze the base if we're not using lora (in that case, it is frozen when applying it)
         if not args.lora:
