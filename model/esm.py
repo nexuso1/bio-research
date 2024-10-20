@@ -29,11 +29,11 @@ parser.add_argument('--epochs', type=int, help='Number of training epochs', defa
 parser.add_argument('--max_length', type=int, help='Maximum sequence length (shorter sequences will be pruned)', default=1024)
 parser.add_argument('--prot_info_path', type=str, 
                      help='Path to the protein dataset. Expects a dataframe with columns ("id", "sequence", "sites"). "sequence" is the protein AA string, "sites" is a list of phosphorylation sites.',
-                     default='data/phosphosite_sequences/phosphosite_df_small.json')
+                     default='../data/phosphosite_sequences/phosphosite_df_small.json')
 parser.add_argument('--train_path', type=str, help='Path to train protein IDs, subset of IDs in the prot. info dataset. JSON list.',
-                    default='data/cleaned_train_prots.json')
+                    default='../data/cleaned_train_prots.json')
 parser.add_argument('--test_path', type=str, help='Path to test protein IDs, subset of IDs in the prot. info dataset. JSON list.',
-                    default='data/cleaned_test_prots.json')
+                    default='../data/cleaned_test_prots.json')
 parser.add_argument('--fine_tune', action='store_true', help='Use fine tuning on the base model or not. Default is False', default=False)
 parser.add_argument('--ft_only', action='store_true', help='Skip pre-training, only fine-tune', default=False)
 parser.add_argument('--weight_decay', type=float, help='Weight decay', default=0.004)
@@ -96,10 +96,11 @@ def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
             ]
             progress_bar.set_description(" ".join(message))
             progress_bar.update(1)
-    return logs
+            break
+    return {k : v.cpu().numpy() for k, v in logs.items()}
 
 def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : TokenClassifier, lr, metadata : Metadata=None, seed=42,
-                start_epoch=0, optim=None):
+                start_epoch=0, f1_min=0, optim=None):
 
     # Set all random seeds
     set_seeds(seed)
@@ -117,7 +118,7 @@ def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : TokenClassif
     metrics = torchmetrics.MetricCollection(metrics)
 
     history = []
-    best_f1 = 0
+    best_f1 = f1_min
     # Train model
     for epoch in range(start_epoch, args.epochs):
         model.train()
@@ -154,13 +155,15 @@ def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : TokenClassif
                 ]
                 data_and_progress.set_description(" ".join(message))
             data_and_progress.update(1)
+            break
 
         print(f'Epoch {epoch}, starting evaluation...')
         eval_logs = eval_model(model, dev_ds, epoch, metrics)
-        save_checkpoint(args, model, config=model.config, optim=optim, epoch=epoch, loss=loss,
-                                path=os.path.join(args.logdir, 'chkpt.pt'), metadata=metadata)
+        save_checkpoint(args, model, config=model.config, optim=optim, epoch=epoch,
+                        path=os.path.join(args.logdir, 'chkpt.pt'), metadata=metadata)
         # Save only the best models by evaluation F1 score
         if best_f1 < eval_logs['f1']:
+            print(f'F1 improved from {best_f1} to {eval_logs["f1"]}, saving...')
             save_model(args, model, f'{args.n}_train_best.pt')
             best_f1 = eval_logs['f1']
         history.append(eval_logs)
@@ -179,7 +182,7 @@ def save_as_string(obj, path):
         json.dump(obj, f)
 
 def save_checkpoint(args, model : TokenClassifier, config : TokenClassifierConfig, optim : torch.optim.Optimizer,
-                    epoch : int, loss, path : str, metadata  : Metadata = None):
+                    epoch : int, path : str, metadata  : Metadata = None, best_f1=0):
     """
     Saves model checkpoint during training. Path should include the filename.
     """
@@ -190,7 +193,7 @@ def save_checkpoint(args, model : TokenClassifier, config : TokenClassifierConfi
     'args' : args,
     'config' : config,
     'epoch' : epoch,
-    'loss' : loss
+    'best_f1' : best_f1
     }, path)
 
     if metadata is not None: 
@@ -206,7 +209,7 @@ def load_from_checkpoint(path):
     Returns a quintuple (model, opitm, epoch, loss, args)
     """
     chkpt = torch.load(path)
-    args, epoch, loss = chkpt['args'], chkpt['epoch'], chkpt['loss']
+    args, epoch = chkpt['args'], chkpt['epoch']
     print(f'Checkpoint args: {args}')
     epoch += 1 # Checkpoints are created after a finished epoch
     print(f'Checkpoint epoch: {epoch}')
@@ -221,7 +224,9 @@ def load_from_checkpoint(path):
     if not args.lora:
         model.set_base_requires_grad(False)
 
-    return model, tokenizer, optim, epoch, loss, args
+    if 'best_f1' in chkpt:
+        return model, tokenizer, optim, epoch, chkpt['best_f1'], args
+    return model, tokenizer, optim, epoch, 0, args
 
 def save_model(args, model : TokenClassifier, name : str):
     """
@@ -259,7 +264,7 @@ def main(args):
     if args.checkpoint_path is not None:
         checkpoint_loaded = True
         prev_ft_val = args.fine_tune
-        model, tokenizer, optim, epoch, loss, args =  load_from_checkpoint(args.checkpoint_path)
+        model, tokenizer, optim, epoch, best_f1, args =  load_from_checkpoint(args.checkpoint_path)
     
     
     # Load a model saved with torch.save() 
@@ -307,7 +312,7 @@ def main(args):
     if checkpoint_loaded:
         print('Resuming from checkpoint...')
         history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr,
-                                              optim=optim, start_epoch=epoch, metadata=meta)
+                                              optim=optim, start_epoch=epoch, metadata=meta, best_f1=best_f1)
     elif not args.fine_tune or args.fine_tune and not args.ft_only:
         history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr, metadata=meta)
 
