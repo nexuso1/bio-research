@@ -312,7 +312,7 @@ def main(args):
     if checkpoint_loaded:
         print('Resuming from checkpoint...')
         history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr,
-                                              optim=optim, start_epoch=epoch, metadata=meta, best_f1=best_f1)
+                                              optim=optim, start_epoch=epoch, metadata=meta, f1_min=best_f1)
     elif not args.fine_tune or args.fine_tune and not args.ft_only:
         history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr, metadata=meta)
 
