@@ -137,10 +137,16 @@ class Metadata:
     def __init__(self) -> None:
         self.data = {}
 
+    def jsonify_fn(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        
+        return obj.__dict__
+
     def to_json(self):
         return json.dumps(
             self,
-            default=lambda o: o.__dict__, 
+            default=self.jsonify_fn, 
             sort_keys=True,
             indent=4)
     
