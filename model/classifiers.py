@@ -1,3 +1,4 @@
+from torch.nn.modules import Module
 from token_classifier_base import TokenClassifier, TokenClassifierConfig
 from modules import RNNClassifier
 from dataclasses import dataclass, field
@@ -17,6 +18,62 @@ class RNNTokenClassiferConfig(TokenClassifierConfig):
                 ConvLayerConfig(256, 384, 3, 1, 2)
             ])
 
+class EncoderClassifierConfig(TokenClassifierConfig):
+    hidden_size : int = 256,
+    n_heads : int = 8
+    n_layers : 1
+    sr_dim : int = 128
+    sr_cnn_layers : list[ConvLayerConfig] = field(default_factory= lambda :[
+            ConvLayerConfig(1280, 640, 7, 2, 2),
+            ConvLayerConfig(640, 320, 5, 2, 2),
+            ConvLayerConfig(320, 160, 3, 2, 2),
+            ConvLayerConfig(160, 128, 3, 1, 2)
+        ])
+    
+    res_cnn_layers : list[ConvLayerConfig] = field(default_factory= lambda :[
+            ConvLayerConfig(1280, 640, 7, 2, 1),
+            ConvLayerConfig(640, 320, 5, 2, 1),
+            ConvLayerConfig(320, 160, 3, 2, 1),
+            ConvLayerConfig(160, 128, 3, 1, 1)
+        ])
+    
+class LinearClassifier(TokenClassifier):
+    def __init__(self, config: TokenClassifierConfig, base_model: Module) -> None:
+        super().__init__(config, base_model)
+        self.classifier = torch.nn.Linear(base_model.config.hidden_size, config.n_labels)
+        self.init_weigths(self.classifier)
+
+class EncoderClassifier(TokenClassifier):
+    def __init__(self, config: TokenClassifierConfig, base_model: Module) -> None:
+        super().__init__(config, base_model)
+        enc_layer = torch.nn.TransformerEncoderLayer(config.sr_dim * 2, nhead=config.n_heads,
+                                                    dim_feedforward=config.hidden_size, dropout=0,
+                                                    activation='relu')
+        self.encoder = torch.nn.TransformerEncoder(enc_layer, config.n_layers)
+        self.sr_cnn = Conv1dModel(config.sr_cnn_layers, config.cnn_layers[-1].out_channels)
+        self.res_cnn = Conv1dModel(config.res_cnn_layers, )
+        self.seq_rep = torch.nn.Sequential(
+                torch.nn.Flatten(),
+                torch.nn.BatchNorm1d(config.cnn_layers[-1].out_channels),
+                torch.nn.Linear(config.cnn_layers[-1].out_channels, config.sr_dim),
+                torch.nn.ReLU()
+            )
+        
+        self.res_rep = torch.nn.Sequential(
+                torch.nn.Flatten(),
+                torch.nn.BatchNorm1d(config.cnn_layers[-1].out_channels),
+                torch.nn.Linear(config.cnn_layers[-1].out_channels, config.sr_dim),
+                torch.nn.ReLU()
+            )
+        self.classifier = torch.nn.Sequential(
+            torch.nn.BatchNorm1d(),
+            torch.nn.Linear(config.hidden_size, config.hidden_size),
+            torch.nn.ReLU(),
+            torch.nn.Linear(config.hidden_size, config.n_labels),
+        )
+
+        self.init_weights()
+        
 class RNNTokenClassifier(TokenClassifier):
     def __init__(self, config: RNNTokenClassiferConfig, base_model) -> None:
         super().__init__(config, base_model)
@@ -30,7 +87,12 @@ class RNNTokenClassifier(TokenClassifier):
                 torch.nn.Linear(config.cnn_layers[-1].out_channels, seq_rep_dim),
                 torch.nn.ReLU()
             )
+
+            for module in (self.cnn, self.seq_rep_mlp):
+                self.init_weights(module)
+
         self.classifier = RNNClassifier(self.base.config.hidden_size + seq_rep_dim, self.n_labels, config.hidden_size, config.n_layers)
+        self.init_weights(self.classifier)
 
     def append_seq_reps(self, sequence_output, seq_reps):
         seq_reps = seq_reps.unsqueeze(1) # (B, 1, SR_DIM)

@@ -24,7 +24,7 @@ from classifiers import RNNTokenClassifier, RNNTokenClassiferConfig
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--seed', type=int, help='Random seed', default=42)
-parser.add_argument('--batch_size', type=int, help='Batch size)', default=8)
+parser.add_argument('--batch_size', type=int, help='Batch size)', default=4)
 parser.add_argument('--epochs', type=int, help='Number of training epochs', default=20)
 parser.add_argument('--max_length', type=int, help='Maximum sequence length (shorter sequences will be pruned)', default=1024)
 parser.add_argument('--prot_info_path', type=str, 
@@ -37,7 +37,7 @@ parser.add_argument('--test_path', type=str, help='Path to test protein IDs, sub
 parser.add_argument('--fine_tune', action='store_true', help='Use fine tuning on the base model or not. Default is False', default=False)
 parser.add_argument('--ft_only', action='store_true', help='Skip pre-training, only fine-tune', default=False)
 parser.add_argument('--weight_decay', type=float, help='Weight decay', default=0.004)
-parser.add_argument('--accum', type=int, help='Number of gradient accumulation steps', default=1)
+parser.add_argument('--accum', type=int, help='Number of gradient accumulation steps', default=3)
 parser.add_argument('--val_batch', type=int, help='Validation batch size', default=10)
 parser.add_argument('--hidden_size', type=int, help='Classifier hidden size', default=256)
 parser.add_argument('--lr', type=float, help='Learning rate', default=3e-4)
@@ -54,7 +54,6 @@ parser.add_argument('--rnn_layers', help='Number of RNN classifier layers', type
 parser.add_argument('--checkpoint_path', help='Resume training from checkpoint', type=str, default=None)
 parser.add_argument('--model_path', help='Load model from this path (not a checkpoint)', type=str, default=None)
 parser.add_argument('--use_cnn', help='Use CNN seq reps', action='store_true', default=False)
-parser.add_argument('--alt_labels', help='Train only on S, T and Y proteins', action='store_true', default=False)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
@@ -64,6 +63,8 @@ def get_esm(type):
         model, tokenizer = EsmModel.from_pretrained('facebook/esm2_t36_3B_UR50D'), AutoTokenizer.from_pretrained('facebook/esm2_t36_3B_UR50D')
     elif type == '15B':
         model, tokenizer = EsmModel.from_pretrained('facebook/esm2_t48_15B_UR50D'), AutoTokenizer.from_pretrained('facebook/esm2_t48_15B_UR50D')
+    elif type == '35M':
+        model, tokenizer = EsmModel.from_pretrained('facebook/esm2_t12_35M_UR50D'), AutoTokenizer.from_pretrained('facebook/esm2_t12_35M_UR50D')
     else:
         model, tokenizer = EsmModel.from_pretrained('facebook/esm2_t33_650M_UR50D'), AutoTokenizer.from_pretrained('facebook/esm2_t33_650M_UR50D')
     return model, tokenizer
@@ -96,7 +97,6 @@ def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
             ]
             progress_bar.set_description(" ".join(message))
             progress_bar.update(1)
-            break
     return {k : v.cpu().numpy() for k, v in logs.items()}
 
 def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : TokenClassifier, lr, metadata : Metadata=None, seed=42,
@@ -155,7 +155,6 @@ def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : TokenClassif
                 ]
                 data_and_progress.set_description(" ".join(message))
             data_and_progress.update(1)
-            break
 
         print(f'Epoch {epoch}, starting evaluation...')
         eval_logs = eval_model(model, dev_ds, epoch, metrics)
@@ -249,7 +248,26 @@ def compute_metrics(y_pred, y, metrics : torchmetrics.MetricCollection):
         metrics.update(y_pred, y.unsqueeze(-1))
         return metrics.compute()
 
-def main(args):
+def create_model(args):
+    # Load ESM-2
+    base, tokenizer = get_esm(args)
+
+    # Create a classifier
+    config = RNNTokenClassiferConfig(1, loss=torch.nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([args.pos_weight])),
+                                        hidden_size=args.hidden_size,
+                                        n_layers=args.rnn_layers)
+    
+    if args.use_cnn:
+        config.sr_dim = 256
+    if args.lora:
+        config.apply_lora = args.lora, 
+        config.lora_config=lora.MultiPurposeLoRAConfig(256)
+    
+    model = RNNTokenClassifier(config, base)
+
+    return model, tokenizer
+
+def run_training(args, model_creation_fn):
     set_seeds(args.seed)
 
     # Create logdir name
@@ -264,29 +282,14 @@ def main(args):
     if args.checkpoint_path is not None:
         checkpoint_loaded = True
         prev_ft_val = args.fine_tune
-        model, tokenizer, optim, epoch, best_f1, args =  load_from_checkpoint(args.checkpoint_path)
+        model, tokenizer, optim, epoch, best_f1, args = load_from_checkpoint(args.checkpoint_path)
     
     
     # Load a model saved with torch.save() 
     elif args.model_path is not None:
         model = load_torch_model(args.model_path)
     else:
-        # Load ESM-2
-        base, tokenizer = get_esm(args)
-
-        # Create a classifier
-        config = RNNTokenClassiferConfig(1, loss=torch.nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([args.pos_weight])),
-                                            hidden_size=args.hidden_size,
-                                            n_layers=args.rnn_layers)
-        
-        if args.use_cnn:
-            config.sr_dim = 256
-        if args.lora:
-            config.apply_lora = args.lora, 
-            config.lora_config=lora.MultiPurposeLoRAConfig(256)
-        
-        model = RNNTokenClassifier(config, base)
-
+        model, tokenizer = model_creation_fn(args)
         # Freeze the base if we're not using lora (in that case, it is frozen when applying it)
         if not args.lora:
             model.set_base_requires_grad(False)
@@ -343,6 +346,9 @@ def main(args):
         meta.data['history'] = history
     save_model(args, model, args.n)
     return history, model
+
+def main(args):
+    return run_training(args, create_model)
 
 if __name__ == '__main__':
     args = parser.parse_args()

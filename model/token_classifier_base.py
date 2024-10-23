@@ -64,7 +64,12 @@ class TokenClassifier(nn.Module):
 
         print('LoRA applied.')
 
-    def init_weights(self, m):
+
+    def init_weigths(self, module):
+        for param in module.parameters():
+            self.xavier_init(param)
+            
+    def xavier_init(self, m):
         """
         Uses xavier/glorot weight initialization for linear layers, and 0 for bias
         """
