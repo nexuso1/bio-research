@@ -198,7 +198,7 @@ def save_checkpoint(args, model : TokenClassifier, config : TokenClassifierConfi
     if metadata is not None: 
         metadata.save(os.path.dirname(path))
 
-def load_from_checkpoint(path):
+def load_from_checkpoint(path, create_model_fn):
     """
     Loads the model checkpoint from the given path. Creates a TokenClassifier instance, 
     with and passes it args from the checkpoint, and flags from the from the arguments.
@@ -212,10 +212,9 @@ def load_from_checkpoint(path):
     print(f'Checkpoint args: {args}')
     epoch += 1 # Checkpoints are created after a finished epoch
     print(f'Checkpoint epoch: {epoch}')
-    base, tokenizer = get_esm(args.type)
     config = chkpt['config']
     print(f'Checkpoint config: {config}')
-    model = RNNTokenClassifier(config, base)
+    model, tokenizer = create_model_fn(args)
     model.load_state_dict(chkpt['model_state_dict'])
     model.to(device)
     optim = torch.optim.AdamW(model.parameters(),weight_decay=args.weight_decay)
@@ -267,7 +266,7 @@ def create_model(args):
 
     return model, tokenizer
 
-def run_training(args, model_creation_fn):
+def run_training(args, create_model_fn):
     set_seeds(args.seed)
 
     # Create logdir name
@@ -282,14 +281,14 @@ def run_training(args, model_creation_fn):
     if args.checkpoint_path is not None:
         checkpoint_loaded = True
         prev_ft_val = args.fine_tune
-        model, tokenizer, optim, epoch, best_f1, args = load_from_checkpoint(args.checkpoint_path)
+        model, tokenizer, optim, epoch, best_f1, args = load_from_checkpoint(args.checkpoint_path, create_model_fn)
     
     
     # Load a model saved with torch.save() 
     elif args.model_path is not None:
         model = load_torch_model(args.model_path)
     else:
-        model, tokenizer = model_creation_fn(args)
+        model, tokenizer = create_model_fn(args)
         # Freeze the base if we're not using lora (in that case, it is frozen when applying it)
         if not args.lora:
             model.set_base_requires_grad(False)
