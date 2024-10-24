@@ -65,7 +65,7 @@ class TokenClassifier(nn.Module):
         print('LoRA applied.')
 
 
-    def init_weigths(self, module):
+    def init_weights(self, module):
         for param in module.parameters():
             self.xavier_init(param)
             

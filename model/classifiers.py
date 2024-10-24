@@ -41,7 +41,7 @@ class LinearClassifier(TokenClassifier):
     def __init__(self, config: TokenClassifierConfig, base_model: Module) -> None:
         super().__init__(config, base_model)
         self.classifier = torch.nn.Linear(base_model.config.hidden_size, config.n_labels)
-        self.init_weigths(self.classifier)
+        self.init_weights(self.classifier)
 
 class EncoderClassifier(TokenClassifier):
     def __init__(self, config: TokenClassifierConfig, base_model: Module) -> None:
