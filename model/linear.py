@@ -1,14 +1,9 @@
-import torch
-import os
-import sys
-import datetime
-
-from esm import run_training, get_esm, parser
+from esm import run_training, get_esm, parser, create_loss
 from classifiers import LinearClassifier, TokenClassifierConfig
 
 def create_model(args):
     esm, tokenizer = get_esm(args.type)
-    config = TokenClassifierConfig(n_labels=1, loss=torch.nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([args.pos_weight])))
+    config = TokenClassifierConfig(n_labels=1, loss=create_loss(args))
     model = LinearClassifier(base_model=esm, config=config)
 
     return model, tokenizer

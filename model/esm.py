@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import random
-import numpy as np
+import pandas as pd
 import argparse
 import json
 import os
@@ -12,6 +12,7 @@ import torchmetrics
 import datetime
 import lora
 
+from functools import partial
 from tqdm.auto import tqdm
 from utils import Metadata, load_torch_model
 from data_loading import prepare_datasets
@@ -19,6 +20,7 @@ from datasets import Dataset
 from transformers import set_seed, EsmModel, AutoTokenizer
 from token_classifier_base import TokenClassifier, TokenClassifierConfig
 from classifiers import RNNTokenClassifier, RNNTokenClassiferConfig
+from torchvision.ops import sigmoid_focal_loss
 
 
 parser = argparse.ArgumentParser()
@@ -36,7 +38,7 @@ parser.add_argument('--test_path', type=str, help='Path to test protein IDs, sub
                     default='../data/cleaned_test_prots.json')
 parser.add_argument('--fine_tune', action='store_true', help='Use fine tuning on the base model or not. Default is False', default=False)
 parser.add_argument('--ft_only', action='store_true', help='Skip pre-training, only fine-tune', default=False)
-parser.add_argument('--weight_decay', type=float, help='Weight decay', default=0.004)
+parser.add_argument('--weight_decay', type=float, help='Weight decay', default=0.01)
 parser.add_argument('--accum', type=int, help='Number of gradient accumulation steps', default=3)
 parser.add_argument('--val_batch', type=int, help='Validation batch size', default=10)
 parser.add_argument('--hidden_size', type=int, help='Classifier hidden size', default=256)
@@ -48,12 +50,13 @@ parser.add_argument('--lora', action='store_true', help='Use LoRA', default=Fals
 parser.add_argument('--dropout', type=float, help='Dropout probability', default=0)
 parser.add_argument('--ft_epochs', type=int, help='Number of epochs for finetuning', default=10)
 parser.add_argument('--type', help='ESM Model type', type=str, default='650M')
-parser.add_argument('--pos_weight', help='Positive class weight', type=float, default=0.97)
+parser.add_argument('--pos_weight', help='Positive class weight', type=float, default=0.75)
 parser.add_argument('--num_workers', help='Number of multiprocessign workers', type=int, default=0)
 parser.add_argument('--rnn_layers', help='Number of RNN classifier layers', type=int, default=2)
 parser.add_argument('--checkpoint_path', help='Resume training from checkpoint', type=str, default=None)
 parser.add_argument('--model_path', help='Load model from this path (not a checkpoint)', type=str, default=None)
 parser.add_argument('--use_cnn', help='Use CNN seq reps', action='store_true', default=False)
+parser.add_argument('--focal', help='Use focal loss. In this mode, pos_weight will be treated as the alpha parameter.', action='store_true', default=False)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
@@ -75,12 +78,18 @@ def set_seeds(s):
     random.seed(s)
     set_seed(s)
 
+def save_preds(path, preds : list):
+    pd.Series(preds).to_json(path)
+    print(f'Predictions saved to {path}.')
+
 def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
     model.eval()
     metrics.reset()
     loss_metric =  torchmetrics.MeanMetric().to(device)
     epoch_message = f"Epoch={epoch+1}"
     progress_bar = tqdm(range(len(test_ds)))
+    preds_list = []
+    probs_list = []
     with torch.no_grad():
         for batch in test_ds:
             batch = {k: v.to(device) for k, v in batch.items()}
@@ -97,7 +106,12 @@ def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
             ]
             progress_bar.set_description(" ".join(message))
             progress_bar.update(1)
-    return {k : v.cpu().numpy() for k, v in logs.items()}
+            # Extract the predicitions
+            valid_logits = logits[batch['labels'] != -1] # Gather valid logits
+            indices = np.cumsum(batch['batch_lens'].cpu().numpy(), 0) # Indices into gathered logits according to batch lengths
+            probs = np.split(valid_logits.cpu().numpy(), indices)[:-1] # Split them according to the batch lenghts, last element is extra
+            probs_list.extend(probs) # Predicted probabilites
+    return {k : v.cpu().numpy() for k, v in logs.items()}, probs_list
 
 def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : TokenClassifier, lr, metadata : Metadata=None, seed=42,
                 start_epoch=0, f1_min=0, optim=None):
@@ -157,13 +171,14 @@ def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : TokenClassif
             data_and_progress.update(1)
 
         print(f'Epoch {epoch}, starting evaluation...')
-        eval_logs = eval_model(model, dev_ds, epoch, metrics)
+        eval_logs, preds = eval_model(model, dev_ds, epoch, metrics)
         save_checkpoint(args, model, config=model.config, optim=optim, epoch=epoch,
                         path=os.path.join(args.logdir, 'chkpt.pt'), metadata=metadata)
         # Save only the best models by evaluation F1 score
         if best_f1 < eval_logs['f1']:
             print(f'F1 improved from {best_f1} to {eval_logs["f1"]}, saving...')
             save_model(args, model, f'{args.n}_train_best.pt')
+            save_preds(path=os.path.join(args.logdir, 'preds.json'), preds=preds)
             best_f1 = eval_logs['f1']
         history.append(eval_logs)
         metadata.data['history'] = history
@@ -247,14 +262,22 @@ def compute_metrics(y_pred, y, metrics : torchmetrics.MetricCollection):
         metrics.update(y_pred, y.unsqueeze(-1))
         return metrics.compute()
 
+def create_loss(args):
+    # Create a loss function
+    if args.focal:
+        return partial(sigmoid_focal_loss, alpha=args.pos_weight)
+    
+    return torch.nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([args.pos_weight]))
+
 def create_model(args):
     # Load ESM-2
     base, tokenizer = get_esm(args)
 
+    loss = create_loss(args)
+                                                            
     # Create a classifier
-    config = RNNTokenClassiferConfig(1, loss=torch.nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([args.pos_weight])),
-                                        hidden_size=args.hidden_size,
-                                        n_layers=args.rnn_layers)
+    config = RNNTokenClassiferConfig(n_labels=1, loss=loss, hidden_size=args.hidden_size,
+                                     n_layers=args.rnn_layers)
     
     if args.use_cnn:
         config.sr_dim = 256
