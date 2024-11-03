@@ -40,7 +40,7 @@ class EncoderClassifierConfig(TokenClassifierConfig):
 
 @dataclass
 class SelectiveFinetuningClassifierConfig(TokenClassifier):
-    unfreeze_indices : list[int] = [-1]
+    unfreeze_indices : list[int] = field(default_factory= lambda : [-1])
 
 class LinearClassifier(TokenClassifier):
     def __init__(self, config: TokenClassifierConfig, base_model: Module) -> None:
