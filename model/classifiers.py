@@ -18,10 +18,11 @@ class RNNTokenClassiferConfig(TokenClassifierConfig):
                 ConvLayerConfig(256, 384, 3, 1, 2)
             ])
 
+@dataclass
 class EncoderClassifierConfig(TokenClassifierConfig):
-    hidden_size : int = 256,
+    hidden_size : int = 256
     n_heads : int = 8
-    n_layers : 1
+    n_layers : int = 1
     sr_dim : int = 128
     sr_cnn_layers : list[ConvLayerConfig] = field(default_factory= lambda :[
             ConvLayerConfig(1280, 640, 7, 2, 2),
@@ -36,7 +37,11 @@ class EncoderClassifierConfig(TokenClassifierConfig):
             ConvLayerConfig(320, 160, 3, 2, 1),
             ConvLayerConfig(160, 128, 3, 1, 1)
         ])
-    
+
+@dataclass
+class SelectiveFinetuningClassifierConfig(TokenClassifier):
+    unfreeze_indices : list[int] = [-1]
+
 class LinearClassifier(TokenClassifier):
     def __init__(self, config: TokenClassifierConfig, base_model: Module) -> None:
         super().__init__(config, base_model)
@@ -136,6 +141,21 @@ class RNNTokenClassifier(TokenClassifier):
         sequence_output = outputs[0]
         classifier_features = self.classifier_features(sequence_output, batch_lens=batch_lens)
         return self.classifier(classifier_features, lengths=torch.sum(attention_mask, -1)), outputs
+    
+class SelectiveFinetuningClassifier(TokenClassifier):
+    def __init__(self, config: SelectiveFinetuningClassifierConfig, base_model: Module, ) -> None:
+        super().__init__(config, base_model)
+        self.classifier = torch.nn.Linear(base_model.config.hidden_size, config.n_labels)
+        self.set_base_requires_grad(False)
+        self.set_indexed_layers_grad(config.unfreeze_indices, True)
+        
+    def set_indexed_layers_grad(self, indices : list[int], req_grad_value : bool):
+        indices = set(indices)
+        self.modified_indices = indices
+        param_list = list(self.base.encoder.layer.named_children())
+        for i in indices:
+            # index 0 contains the name, 1 the parameter
+            param_list[i][1].requires_grad = req_grad_value
 
 class DummyRNNTokenClassifier(TokenClassifier):
     def __init__(self, config: RNNTokenClassiferConfig, base_model) -> None:
