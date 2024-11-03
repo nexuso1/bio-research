@@ -14,6 +14,6 @@ def main(args):
     run_training(args, create_model)
 
 if __name__ == '__main__':
-    parser.add_argument('--indices', default="[-1]", default=False, help='Indices of base model layers to be unfrozen')
+    parser.add_argument('--indices', default="[-1]", help='Indices of base model layers to be unfrozen')
     args = parser.parse_args()
     main(args)
