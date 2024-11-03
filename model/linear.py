@@ -5,7 +5,10 @@ def create_model(args):
     esm, tokenizer = get_esm(args.type)
     config = TokenClassifierConfig(n_labels=1, loss=create_loss(args))
     model = LinearClassifier(base_model=esm, config=config)
-
+    
+    # Freeze the base if we're not using lora (in that case, it is frozen when applying it)
+    if not args.lora:
+        model.set_base_requires_grad(False)
     return model, tokenizer
 
 def main(args):

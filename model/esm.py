@@ -88,7 +88,6 @@ def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
     loss_metric =  torchmetrics.MeanMetric().to(device)
     epoch_message = f"Epoch={epoch+1}"
     progress_bar = tqdm(range(len(test_ds)))
-    preds_list = []
     probs_list = []
     with torch.no_grad():
         for batch in test_ds:
@@ -287,6 +286,10 @@ def create_model(args):
     
     model = RNNTokenClassifier(config, base)
 
+    # Freeze the base if we're not using lora (in that case, it is frozen when applying it)
+    if not args.lora:
+        model.set_base_requires_grad(False)
+
     return model, tokenizer
 
 def run_training(args, create_model_fn):
@@ -312,9 +315,7 @@ def run_training(args, create_model_fn):
         model = load_torch_model(args.model_path)
     else:
         model, tokenizer = create_model_fn(args)
-        # Freeze the base if we're not using lora (in that case, it is frozen when applying it)
-        if not args.lora:
-            model.set_base_requires_grad(False)
+
 
     print(f'batch {args.batch_size} accum {args.accum} effective batch {args.accum * args.batch_size}')
     
