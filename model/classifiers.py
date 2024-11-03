@@ -155,7 +155,8 @@ class SelectiveFinetuningClassifier(TokenClassifier):
         param_list = list(self.base.encoder.layer.named_children())
         for i in indices:
             # index 0 contains the name, 1 the parameter
-            param_list[i][1].requires_grad = req_grad_value
+            for param in param_list[i][1].parameters():
+                param.requires_grad = req_grad_value
 
 class DummyRNNTokenClassifier(TokenClassifier):
     def __init__(self, config: RNNTokenClassiferConfig, base_model) -> None:
