@@ -5,7 +5,7 @@ from classifiers import SelectiveFinetuningClassifier, SelectiveFinetuningClassi
 def create_model(args):
     esm, tokenizer = get_esm(args.type)
     indices = ast.literal_eval(args.indices)
-    config = SelectiveFinetuningClassifierConfig(n_labels=1, loss=create_loss(args), unfreeze_indices=indices)
+    config = SelectiveFinetuningClassifierConfig(n_labels=1,loss=create_loss(args), unfreeze_indices=indices)
     model = SelectiveFinetuningClassifier(base_model=esm, config=config)
 
     return model, tokenizer

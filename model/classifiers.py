@@ -39,7 +39,7 @@ class EncoderClassifierConfig(TokenClassifierConfig):
         ])
 
 @dataclass
-class SelectiveFinetuningClassifierConfig(TokenClassifier):
+class SelectiveFinetuningClassifierConfig(TokenClassifierConfig):
     unfreeze_indices : list[int] = field(default_factory= lambda : [-1])
 
 class LinearClassifier(TokenClassifier):
