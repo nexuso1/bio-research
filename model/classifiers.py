@@ -146,6 +146,7 @@ class SelectiveFinetuningClassifier(TokenClassifier):
     def __init__(self, config: SelectiveFinetuningClassifierConfig, base_model: Module, ) -> None:
         super().__init__(config, base_model)
         self.classifier = torch.nn.Linear(base_model.config.hidden_size, config.n_labels)
+        self.init_weights(self.classifier)
         self.set_base_requires_grad(False)
         self.set_indexed_layers_grad(config.unfreeze_indices, True)
         

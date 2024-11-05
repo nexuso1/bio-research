@@ -49,8 +49,8 @@ parser.add_argument('--compile', action='store_true', default=False, help='Compi
 parser.add_argument('--lora', action='store_true', help='Use LoRA', default=False)
 parser.add_argument('--dropout', type=float, help='Dropout probability', default=0)
 parser.add_argument('--ft_epochs', type=int, help='Number of epochs for finetuning', default=10)
-parser.add_argument('--type', help='ESM Model type', type=str, default='650M')
-parser.add_argument('--pos_weight', help='Positive class weight', type=float, default=0.75)
+parser.add_argument('--type', help='ESM Model type', type=str, default='35M')
+parser.add_argument('--pos_weight', help='Positive class weight', type=float, default=3)
 parser.add_argument('--num_workers', help='Number of multiprocessign workers', type=int, default=0)
 parser.add_argument('--rnn_layers', help='Number of RNN classifier layers', type=int, default=2)
 parser.add_argument('--checkpoint_path', help='Resume training from checkpoint', type=str, default=None)
@@ -264,7 +264,7 @@ def compute_metrics(y_pred, y, metrics : torchmetrics.MetricCollection):
 def create_loss(args):
     # Create a loss function
     if args.focal:
-        return partial(sigmoid_focal_loss, alpha=args.pos_weight)
+        return partial(sigmoid_focal_loss, alpha=args.pos_weight, reduction='mean')
     
     return torch.nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([args.pos_weight]))
 

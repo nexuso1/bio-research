@@ -11,7 +11,7 @@ class TokenClassifierConfig:
     loss : Callable[[torch.Tensor], torch.Tensor]
     lora_config : lora.MultiPurposeLoRAConfig | None = None
     apply_lora : bool = False
-    base_type : str = '650M' # Type of the ESM base model, currently (650M, 13B)
+    base_type : str = '650M' # Type of the ESM base model, currently (650M, 13B, 35M)
 
 class TokenClassifier(nn.Module):
     """
@@ -21,7 +21,7 @@ class TokenClassifier(nn.Module):
     Function set_base_training_status() can freeze/unfreeze the base model, meant to be set 
     by the user before training.
     """
-    ignore_index = -1 # Ignore labels with index -100
+    ignore_index = -1 # Ignore labels with index -1
     token_model = None
 
     def __init__(self, config : TokenClassifierConfig, base_model : torch.nn.Module) -> None:
@@ -153,13 +153,10 @@ class TokenClassifier(nn.Module):
         logits, outputs = self(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
 
         if attention_mask is not None:
-            active_loss = attention_mask.view(-1) == 1
+            active_loss = labels.view(-1) != self.ignore_index
             active_logits = logits.reshape(-1, self.n_labels)
-            active_labels = torch.where(
-                active_loss, labels.view(-1), torch.tensor(self.ignore_index).type_as(labels)
-            )
-            valid_logits=active_logits[active_labels!=self.ignore_index].flatten()
-            valid_labels=active_labels[active_labels!=self.ignore_index]
+            valid_logits=active_logits[active_loss].flatten()
+            valid_labels=labels.view(-1)[active_loss]
             loss = self.loss(valid_logits, valid_labels)
             
         else:
