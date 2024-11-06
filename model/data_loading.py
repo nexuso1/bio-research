@@ -8,7 +8,6 @@ from sklearn.model_selection import train_test_split
 from Bio import SeqIO
 from torch.utils.data import DataLoader
 from functools import partial
-from utils import save_as_string
 
 
 def remove_long_sequences(df, max_length):
@@ -148,38 +147,6 @@ def load_phospho_epsd(path : str):
         res[id] = group['Position'].to_list()
 
     return res
-
-def prepare_datasets_old(args, tokenizer, ignore_label):
-    # Load and preprocess data from the dataset
-    data = load_prot_data(args.dataset_path)
-    data = remove_long_sequences(data, args.max_length)
-    #prepped_data = preprocess_data(data)
-
-    # Load clustering information about proteins,
-    # and split the clusters into train and test sets
-    clusters = load_clusters(args.clusters)
-    #train_clusters, test_clusters = split_train_test_clusters(args, clusters, test_size=0.2) # Split clusters into train and test sets
-    train_prots, test_prots = split_train_test_clusters(args, clusters, test_size=0.2) # Split clusters into train and test sets
-    # train_prots, test_prots = get_train_test_prots(clusters, train_clusters, test_clusters) # Extract the train proteins and test proteins
-    train_df, test_df = split_dataset(data, train_prots, test_prots) # Split data according to the protein ids
-
-    print(f'Train dataset shape: {train_df.shape}')
-    print(f'Test dataset shape: {test_df.shape}')
-    
-    # Save test proteins
-    test_path = f'./{args.o if args.o else args.logdir}/{args.n}_test_data.json'
-    save_as_string(list(test_prots), test_path)
-    print(f'Test prots saved to {test_path}')
-
-    train_dataset = ProteinTorchDataset(train_df)
-    dev_dataset = ProteinTorchDataset(test_df)
-
-    train = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=ignore_label),
-                       persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
-    dev = DataLoader(dev_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=ignore_label),
-                      persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
-    
-    return train, dev
 
 def prepare_datasets(args, tokenizer, ignore_label, return_datasets=False):
     prot_data = load_prot_data(args.prot_info_path)
