@@ -251,6 +251,7 @@ def load_from_checkpoint(path, create_model_fn):
     except RuntimeError:
         compiled_model = torch.compile(model)
         compiled_model.load_state_dict(chkpt['model_state_dict'])
+        optim = torch.optim.AdamW(model.parameters(),weight_decay=args.weight_decay)
         f1 = chkpt['best_f1'] if 'best_f1' in chkpt.keys() else None
         # Fix the checkpoint
         save_checkpoint(args, model, config, optim, epoch - 1, path, best_f1=f1)
