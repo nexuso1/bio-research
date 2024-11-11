@@ -13,6 +13,7 @@ import datetime
 import lora
 
 from functools import partial
+from dataclasses import dataclass
 from tqdm.auto import tqdm
 from utils import Metadata, load_torch_model
 from data_loading import prepare_datasets
@@ -61,6 +62,20 @@ parser.add_argument('--focal', help='Use focal loss. In this mode, pos_weight wi
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
+@dataclass
+class TrainingConfig:
+    epochs : int
+    accum : int
+    batch_size : int
+    weight_decay : float
+    lr : float
+    logdir : str
+    metadata : Metadata=None
+    seed : int = 42
+    start_epoch : int = 0
+    f1_min : int = 0
+    optim : torch.optim.Optimizer = None
+
 def get_esm(type):
     if type == '3B':
         model, tokenizer = EsmModel.from_pretrained('facebook/esm2_t36_3B_UR50D'), AutoTokenizer.from_pretrained('facebook/esm2_t36_3B_UR50D')
@@ -106,21 +121,20 @@ def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
             progress_bar.set_description(" ".join(message))
             progress_bar.update(1)
             # Extract the predicitions
-            valid_logits = logits[batch['labels'] != -1] # Gather valid logits
+            valid_logits = logits[batch['labels'] != model.igore_index] # Gather valid logits
             indices = np.cumsum(batch['batch_lens'].cpu().numpy(), 0) # Indices into gathered logits according to batch lengths
             probs = np.split(valid_logits.cpu().numpy(), indices)[:-1] # Split them according to the batch lenghts, last element is extra
             probs_list.extend(probs) # Predicted probabilites
     return {k : v.cpu().numpy() for k, v in logs.items()}, probs_list
 
-def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : TokenClassifier, lr, metadata : Metadata=None, seed=42,
-                start_epoch=0, f1_min=0, optim=None):
+def train_model(train_ds : Dataset, dev_ds : Dataset, model : torch.nn.Module, config : TrainingConfig):
 
     # Set all random seeds
-    set_seeds(seed)
+    set_seeds(config.seed)
 
-    optim = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=args.weight_decay) if optim is None else optim
+    optim = torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay) if config.optim is None else config.optim
 
-    schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, len(train_ds) * args.epochs)
+    schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, len(train_ds) * config.epochs)
 
     metrics = {
         'f1' : torchmetrics.F1Score(task='binary', ignore_index=model.ignore_index).to(device),
@@ -131,12 +145,12 @@ def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : TokenClassif
     metrics = torchmetrics.MetricCollection(metrics)
 
     history = []
-    best_f1 = f1_min
+    best_f1 = config.f1_min
     # Train model
-    for epoch in range(start_epoch, args.epochs):
+    for epoch in range(config.start_epoch, config.epochs):
         model.train()
         metrics.reset()
-        epoch_message = f"Epoch={epoch+1}/{args.epochs}"
+        epoch_message = f"Epoch={epoch+1}/{config.epochs}"
         # Progress bar
         data_and_progress = tqdm(
             train_ds,
@@ -150,9 +164,9 @@ def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : TokenClassif
             loss, logits = model.train_predict(**batch)
 
             # Normalize the loss by the number of accumulation steps
-            loss = loss / args.accum
+            loss = loss / config.accum
 
-            if args.accum == 1 or ( i > 0 and i % args.accum == 0) or (i + 1 == len(train_ds)):
+            if config.accum == 1 or ( i > 0 and i % config.accum == 0) or (i + 1 == len(train_ds)):
                 loss.backward()
                 optim.step()
                 schedule.step(epoch)
@@ -171,8 +185,8 @@ def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : TokenClassif
 
         print(f'Epoch {epoch}, starting evaluation...')
         eval_logs, preds = eval_model(model, dev_ds, epoch, metrics)
-        save_checkpoint(args, model, config=model.config, optim=optim, epoch=epoch,
-                        path=os.path.join(args.logdir, 'chkpt.pt'), metadata=metadata)
+        save_checkpoint(args, model, model_conf=model.config, optim=optim, epoch=epoch,
+                        path=os.path.join(args.logdir, 'chkpt.pt'), metadata=config.metadata)
         # Save only the best models by evaluation F1 score
         if best_f1 < eval_logs['f1']:
             print(f'F1 improved from {best_f1} to {eval_logs["f1"]}, saving...')
@@ -180,7 +194,7 @@ def train_model(args, train_ds : Dataset, dev_ds : Dataset, model : TokenClassif
             save_preds(path=os.path.join(args.logdir, 'preds.json'), preds=preds)
             best_f1 = eval_logs['f1']
         history.append(eval_logs)
-        metadata.data['history'] = history
+        config.metadata.data['history'] = history
     return history, model
 
 def save_as_string(obj, path):
@@ -194,7 +208,7 @@ def save_as_string(obj, path):
     with open(path, 'w') as f:
         json.dump(obj, f)
 
-def save_checkpoint(args, model : TokenClassifier, config : TokenClassifierConfig, optim : torch.optim.Optimizer,
+def save_checkpoint(args, model : TokenClassifier, model_conf : TokenClassifierConfig, optim : torch.optim.Optimizer,
                     epoch : int, path : str, metadata  : Metadata = None, best_f1=0):
     """
     Saves model checkpoint during training. Path should include the filename.
@@ -204,7 +218,7 @@ def save_checkpoint(args, model : TokenClassifier, config : TokenClassifierConfi
     'optimizer_state_dict': optim.state_dict(),
     'model_state_dict': model.state_dict(),
     'args' : args,
-    'config' : config,
+    'config' : model_conf,
     'epoch' : epoch,
     'best_f1' : best_f1
     }, path)
@@ -221,7 +235,10 @@ def load_from_checkpoint(path, create_model_fn):
     
     Returns a quintuple (model, opitm, epoch, loss, args)
     """
-    chkpt = torch.load(path)
+    try:
+        chkpt = torch.load(path)
+    except RuntimeError:
+        chkpt = torch.load(path, map_location='cpu')
     args, epoch = chkpt['args'], chkpt['epoch']
     print(f'Checkpoint args: {args}')
     epoch += 1 # Checkpoints are created after a finished epoch
@@ -229,7 +246,14 @@ def load_from_checkpoint(path, create_model_fn):
     config = chkpt['config']
     print(f'Checkpoint config: {config}')
     model, tokenizer = create_model_fn(args)
-    model.load_state_dict(chkpt['model_state_dict'])
+    try:
+        model.load_state_dict(chkpt['model_state_dict'])
+    except RuntimeError:
+        compiled_model = torch.compile(model)
+        compiled_model.load_state_dict(chkpt['model_state_dict'])
+        f1 = chkpt['best_f1'] if 'best_f1' in chkpt.keys() else None
+        # Fix the checkpoint
+        save_checkpoint(args, model, config, optim, epoch - 1, path, best_f1=f1)
     model.to(device)
     optim = torch.optim.AdamW(model.parameters(),weight_decay=args.weight_decay)
     optim.load_state_dict(chkpt['optimizer_state_dict'])
@@ -295,14 +319,12 @@ def create_model(args):
 def run_training(args, create_model_fn):
     set_seeds(args.seed)
 
-    # Create logdir name
-    args.logdir = os.path.join(
-        "logs",
-        "{}_{}".format(
+    log_dirname = args.o if args.o else "{}_{}".format(
             os.path.basename(globals().get("__file__", "notebook")),
             datetime.datetime.now().strftime("%Y_%m_%d_%H%M%S"),
-        ),
-    )
+        )
+    # Create logdir name
+    args.logdir = os.path.join("logs", log_dirname)
     checkpoint_loaded = False
     if args.checkpoint_path is not None:
         checkpoint_loaded = True
@@ -333,14 +355,19 @@ def run_training(args, create_model_fn):
     meta.save(args.logdir)
 
     train, dev = prepare_datasets(args, tokenizer, model.ignore_index)
-
+    train_config = TrainingConfig( 
+        epochs = args.epochs, accum=args.accum, batch_size=args.batch_size,
+        weight_decay=args.weight_decay,
+        lr=args.lr, logdir=args.logdir, metadata=meta
+        )
     # --- Training ---
     if checkpoint_loaded:
-        print('Resuming from checkpoint...')
-        history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr,
-                                              optim=optim, start_epoch=epoch, metadata=meta, f1_min=best_f1)
-    elif not args.fine_tune or args.fine_tune and not args.ft_only:
-        history, compiled_model = train_model(args, train_ds=train, dev_ds=dev, model=training_model, seed=args.seed, lr=args.lr, metadata=meta)
+        train_config.optim = optim
+        train_config.f1_min = best_f1
+        train_config.start_epoch = epoch
+        print('Resuming from checkpoint')
+
+    history, compiled_model = train_model(train_ds=train, dev_ds=dev, model=training_model, config=train_config)
 
     # --- Fine-tuning ---
     if args.fine_tune:
