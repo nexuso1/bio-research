@@ -65,6 +65,7 @@ print(device)
 @dataclass
 class TrainingConfig:
     epochs : int
+    args : argparse.Namespace
     accum : int
     batch_size : int
     weight_decay : float
@@ -185,13 +186,13 @@ def train_model(train_ds : Dataset, dev_ds : Dataset, model : torch.nn.Module, c
 
         print(f'Epoch {epoch}, starting evaluation...')
         eval_logs, preds = eval_model(model, dev_ds, epoch, metrics)
-        save_checkpoint(args, model, model_conf=model.config, optim=optim, epoch=epoch,
-                        path=os.path.join(args.logdir, 'chkpt.pt'), metadata=config.metadata)
+        save_checkpoint(config.args, model, model_conf=model.config, optim=optim, epoch=epoch,
+                        path=os.path.join(config.logdir, 'chkpt.pt'), metadata=config.metadata)
         # Save only the best models by evaluation F1 score
         if best_f1 < eval_logs['f1']:
             print(f'F1 improved from {best_f1} to {eval_logs["f1"]}, saving...')
-            save_model(args, model, f'{args.n}_train_best.pt')
-            save_preds(path=os.path.join(args.logdir, 'preds.json'), preds=preds)
+            save_model(config.args, model, f'{config.args.n}_train_best.pt')
+            save_preds(path=os.path.join(config.logdir, 'preds.json'), preds=preds)
             best_f1 = eval_logs['f1']
         history.append(eval_logs)
         config.metadata.data['history'] = history
@@ -356,10 +357,11 @@ def run_training(args, create_model_fn):
     meta.save(args.logdir)
 
     train, dev = prepare_datasets(args, tokenizer, model.ignore_index)
-    train_config = TrainingConfig( 
+    train_config = TrainingConfig(
         epochs = args.epochs, accum=args.accum, batch_size=args.batch_size,
         weight_decay=args.weight_decay,
-        lr=args.lr, logdir=args.logdir, metadata=meta
+        lr=args.lr, logdir=args.logdir, metadata=meta,
+        args = args
         )
     # --- Training ---
     if checkpoint_loaded:
