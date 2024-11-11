@@ -121,7 +121,7 @@ def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
             progress_bar.set_description(" ".join(message))
             progress_bar.update(1)
             # Extract the predicitions
-            valid_logits = logits[batch['labels'] != model.igore_index] # Gather valid logits
+            valid_logits = logits[batch['labels'] != model.ignore_index] # Gather valid logits
             indices = np.cumsum(batch['batch_lens'].cpu().numpy(), 0) # Indices into gathered logits according to batch lengths
             probs = np.split(valid_logits.cpu().numpy(), indices)[:-1] # Split them according to the batch lenghts, last element is extra
             probs_list.extend(probs) # Predicted probabilites
