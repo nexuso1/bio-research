@@ -8,7 +8,7 @@ from sklearn.model_selection import train_test_split
 from Bio import SeqIO
 from torch.utils.data import DataLoader
 from functools import partial
-
+from ast import literal_eval
 
 def remove_long_sequences(df, max_length):
     mask = df['sequence'].apply(lambda x: len(x) < max_length)
@@ -149,7 +149,7 @@ def load_phospho_epsd(path : str):
     return res
 
 def prepare_datasets(args, tokenizer, ignore_label, return_datasets=False):
-    prot_data = load_prot_data(args.prot_info_path)
+    prot_data = load_prot_data(args.prot_info_path, residues=literal_eval(args.residues))
     with open(args.train_path, 'r') as f:
         train_prots = json.load(f)
 

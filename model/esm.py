@@ -58,6 +58,7 @@ parser.add_argument('--checkpoint_path', help='Resume training from checkpoint',
 parser.add_argument('--model_path', help='Load model from this path (not a checkpoint)', type=str, default=None)
 parser.add_argument('--use_cnn', help='Use CNN seq reps', action='store_true', default=False)
 parser.add_argument('--focal', help='Use focal loss. In this mode, pos_weight will be treated as the alpha parameter.', action='store_true', default=False)
+parser.add_argument('--residues', help='List of residues to train on', default="['S', 'T', 'Y']", type=str)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
@@ -98,6 +99,7 @@ def save_preds(path, preds : list):
     pd.Series(preds).to_json(path)
     print(f'Predictions saved to {path}.')
 
+@torch.no_grad()
 def eval_model(model, test_ds, epoch, metrics : torchmetrics.MetricCollection):
     model.eval()
     metrics.reset()
@@ -141,6 +143,8 @@ def train_model(train_ds : Dataset, dev_ds : Dataset, model : torch.nn.Module, c
         'f1' : torchmetrics.F1Score(task='binary', ignore_index=model.ignore_index).to(device),
         'precision' : torchmetrics.Precision(task='binary',ignore_index=model.ignore_index).to(device),
         'recall' : torchmetrics.Recall(task='binary', ignore_index=model.ignore_index).to(device),
+        'auroc' : torchmetrics.AUROC('binary', ignore_index=model.ignore_index).to(device),
+        'mcc' : torchmetrics.MatthewsCorrCoef('binary', ignore_index=model.ignore_index).to(device)
     }
     loss_metric =  torchmetrics.MeanMetric().to(device)
     metrics = torchmetrics.MetricCollection(metrics)
