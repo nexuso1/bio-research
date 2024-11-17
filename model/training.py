@@ -22,22 +22,23 @@ class LightningWrapper(L.LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss, logits = self.classifier.train_predict(**batch)
-        self.log('train_loss', loss)
+        self.log('train_loss', loss, sync_dist=True, prog_bar=True)
         self.train_metrics(logits.view(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels))
-        self.log_dict(self.train_metrics, on_step=True, on_epoch=True)
+        self.log_dict(self.train_metrics, on_epoch=True, sync_dist=True, prog_bar=True)
 
         return loss
         
     def validation_step(self, batch, batch_idx):
         loss, logits = self.classifier.train_predict(**batch)
-        self.log('val_loss', loss, on_step=True, on_epoch=True)
+        self.log('val_loss', loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
         self.valid_metrics(logits.view(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels))
-        self.log_dict(self.valid_metrics, on_step=False, on_epoch=True)
+        self.log_dict(self.valid_metrics, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
 
     def configure_optimizers(self):
+	
         optim = torch.optim.AdamW(self.classifier.parameters(), 
-                                  lr=self.classifier.config.lr,
-                                  weight_decay=self.classifier.config.weight_decay)
+                                  lr=self.hparams.lr,
+                                  weight_decay=self.hparams.weight_decay)
         
         return optim
     
@@ -45,8 +46,8 @@ def train_model(args, train, dev, model):
     logger = TensorBoardLogger(args.logdir, name=f'tb_log')
     chkpt_callback = ModelCheckpoint(args.o, filename='chkpt.pt', monitor='val_f1')
     trainer = L.Trainer(logger=logger, callbacks=[chkpt_callback], max_epochs=args.epochs,
-                        deterministic=True, log_every_n_steps=1)
-    trainer.fit(model, train, dev)
+                        deterministic=True, log_every_n_steps=1, )
+    trainer.fit(model, train, dev, accumulate_grad_batches=args.accum)
 
 def load_from_checkpoint(checkpoint_path, create_model_fn):
     chkpt = torch.load(checkpoint_path)
