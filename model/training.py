@@ -26,7 +26,7 @@ class LightningWrapper(L.LightningModule):
     def _compute_metrics_step(self, logits, labels):
         self.step_metrics.update(logits, labels)
         self.epoch_metrics.update(logits, labels.int())
-        self.prc.update(logits, labels)
+        self.prc.update(logits, labels.int())
         self.log_dict(self.step_metrics,sync_dist=True, prog_bar=True)
 
     def training_step(self, batch, batch_idx):
