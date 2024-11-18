@@ -3,7 +3,11 @@ import lightning as L
 import torchmetrics
 import os.path
 import datetime
+import matplotlib.pyplot as plt
+import io
 
+from torchvision.transforms import ToTensor
+from PIL import Image
 from token_classifier_base import TokenClassifier
 from lightning.pytorch.callbacks import ModelCheckpoint
 from utils import Metadata
@@ -46,8 +50,22 @@ class LightningWrapper(L.LightningModule):
     def on_validation_epoch_end(self) -> None:
         self.log_dict(self.epoch_metrics.compute(), prog_bar=True, sync_dist=True)
         self.prc.compute()
-        fig, ax = self.prc.plot(score=True)
-        self.logger.experiment.add_figure(fig)
+
+        fig, ax = plt.subplots(figsize=(10, 10))
+
+        self.prc.plot(ax=ax, score=True)
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", bbox_inches="tight")
+        buf.seek(0)
+        im = ToTensor()(Image.open(buf))
+
+        self.logger.experiment.add_image(
+            "val_prc",
+            im,
+            global_step=self.current_epoch,
+        )
+        
         self.loss_metric.reset()
 
     def validation_step(self, batch, batch_idx):
@@ -55,7 +73,7 @@ class LightningWrapper(L.LightningModule):
         self.loss_metric.update(loss)
         self.log('val_loss', self.loss_metric.compute(), prog_bar=True, sync_dist=True)
         self._compute_metrics_step(logits.view(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels))
-        
+
     def configure_optimizers(self):
         optim = torch.optim.AdamW(self.classifier.parameters(), 
                                   lr=self.hparams.lr,
