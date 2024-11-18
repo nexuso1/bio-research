@@ -42,7 +42,7 @@ class LightningWrapper(L.LightningModule):
 
     def on_validation_epoch_end(self) -> None:
         self.log_dict(self.epoch_metrics, prog_bar=True, sync_dist=True)
-        self.log('val_precision_recall_curve', self.prc)
+        self.logger.experiment.add_figure(self.prc.plot()) 
 
     def validation_step(self, batch, batch_idx):
         loss, logits = self.classifier.train_predict(**batch)
