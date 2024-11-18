@@ -42,7 +42,8 @@ class LightningWrapper(L.LightningModule):
 
     def on_validation_epoch_end(self) -> None:
         self.log_dict(self.epoch_metrics, prog_bar=True, sync_dist=True)
-        self.logger.experiment.add_figure(self.prc.plot()) 
+        fig, ax = self.prc.plot(score=True)
+        self.logger.experiment.add_figure(fig) 
 
     def validation_step(self, batch, batch_idx):
         loss, logits = self.classifier.train_predict(**batch)
@@ -63,8 +64,14 @@ class LightningWrapper(L.LightningModule):
 def train_model(args, train, dev, model):
     logger = TensorBoardLogger(args.logdir, name=f'tb_log')
     chkpt_callback = ModelCheckpoint(args.o, filename='chkpt.pt', monitor='val_f1_epoch')
+
+    # Use deepspeed 
+    if torch.cuda.device_count() > 0:
+        strategy = "deepspeed_stage_2"
+    else:
+        strategy = "auto"
     trainer = L.Trainer(logger=logger, callbacks=[chkpt_callback], max_epochs=args.epochs,
-                        deterministic=True, log_every_n_steps=1,  accumulate_grad_batches=args.accum)
+                        deterministic=True, log_every_n_steps=1,  accumulate_grad_batches=args.accum, strategy=strategy)
     trainer.fit(model, train, dev)
 
 def load_from_checkpoint(checkpoint_path, create_model_fn):
