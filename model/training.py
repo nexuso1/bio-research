@@ -20,36 +20,42 @@ class LightningWrapper(L.LightningModule):
         self.epoch_metrics = epoch_metrics
         self.loss_metric = torchmetrics.MeanMetric()
         self.prc = torchmetrics.PrecisionRecallCurve('binary', ignore_index=self.classifier.ignore_index)
-
+        self.test_outputs = []
         self.save_hyperparameters(args)
 
     def _compute_metrics_step(self, logits, labels):
         self.step_metrics.update(logits, labels)
         self.epoch_metrics.update(logits, labels.int())
         self.prc.update(logits, labels.int())
-        self.log_dict(self.step_metrics,sync_dist=True, prog_bar=True)
+        self.log_dict(self.step_metrics.compute(),sync_dist=True, prog_bar=True)
 
     def training_step(self, batch, batch_idx):
         loss, logits = self.classifier.train_predict(**batch)
         self.loss_metric.update(loss)
-        self.log('train_loss', self.loss_metric, sync_dist=True, prog_bar=True)
+        self.log('train_loss', self.loss_metric.compute(), sync_dist=True, prog_bar=True)
         self._compute_metrics_step(logits.view(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels))
 
         return loss
 
     def on_train_epoch_end(self) -> None:
-        self.log_dict(self.epoch_metrics, prog_bar=True, sync_dist=True)
+        self.log_dict(self.epoch_metrics.compute(), prog_bar=True, sync_dist=True)
+        self.loss_metric.reset()
+        self.epoch_metrics.reset()
+        self.step_metrics.reset() 
 
     def on_validation_epoch_end(self) -> None:
-        self.log_dict(self.epoch_metrics, prog_bar=True, sync_dist=True)
+        self.log_dict(self.epoch_metrics.compute(), prog_bar=True, sync_dist=True)
+        self.prc.compute()
         fig, ax = self.prc.plot(score=True)
-        self.logger.experiment.add_figure(fig) 
+        self.logger.experiment.add_figure(fig)
+        self.loss_metric.reset()
 
     def validation_step(self, batch, batch_idx):
-        loss, logits = self.classifier.train_predict(**batch)
-        self.log('val_loss', loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        loss, logits = self.classifier.predict(**batch)
+        self.loss_metric.update(loss)
+        self.log('val_loss', self.loss_metric.compute(), prog_bar=True, sync_dist=True)
         self._compute_metrics_step(logits.view(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels))
-
+        
     def configure_optimizers(self):
         optim = torch.optim.AdamW(self.classifier.parameters(), 
                                   lr=self.hparams.lr,
