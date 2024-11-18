@@ -35,16 +35,19 @@ class LightningWrapper(L.LightningModule):
         self.log_dict(self.valid_metrics, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
 
     def configure_optimizers(self):
-	
         optim = torch.optim.AdamW(self.classifier.parameters(), 
                                   lr=self.hparams.lr,
                                   weight_decay=self.hparams.weight_decay)
-        
-        return optim
+        schedule = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, mode='min', factor=0.5, patience=2)
+        return {'optimizer' : optim, 'lr_scheduler' : { 
+            "scheduler" : schedule,
+            "monitor" : "train_loss",
+            "frequency" : 1
+        }}
     
 def train_model(args, train, dev, model):
     logger = TensorBoardLogger(args.logdir, name=f'tb_log')
-    chkpt_callback = ModelCheckpoint(args.o, filename='chkpt.pt', monitor='val_f1')
+    chkpt_callback = ModelCheckpoint(args.o, filename='chkpt.pt', monitor='val_f1_epoch')
     trainer = L.Trainer(logger=logger, callbacks=[chkpt_callback], max_epochs=args.epochs,
                         deterministic=True, log_every_n_steps=1, )
     trainer.fit(model, train, dev, accumulate_grad_batches=args.accum)
