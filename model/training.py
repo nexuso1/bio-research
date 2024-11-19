@@ -23,10 +23,15 @@ class LightningWrapper(L.LightningModule):
                  step_metrics : torchmetrics.MetricCollection):
         super(LightningWrapper, self).__init__()
         self.classifier = module
+
         self.step_metrics = step_metrics
+        self.test_step_metrics = step_metrics.clone(prefix='test') 
         self.val_step_metrics = step_metrics.clone(prefix='val')
+
         self.epoch_metrics = epoch_metrics
+        self.test_epoch_metrics = epoch_metrics.clone(prefix='test')
         self.val_epoch_metrics = epoch_metrics.clone(prefix='val')
+
         self.loss_metric = torchmetrics.MeanMetric()
         self.prc = torchmetrics.PrecisionRecallCurve('binary', ignore_index=self.classifier.ignore_index)
         self.test_outputs = []
@@ -46,6 +51,13 @@ class LightningWrapper(L.LightningModule):
                                    self.step_metrics, self.epoch_metrics)
 
         return loss
+    
+    def test_step(self, batch, batch_idx):
+        loss, logits = self.classifier.predict(**batch)
+        self.loss_metric.update(loss)
+        self.log('test_loss', self.loss_metric.compute(), prog_bar=True, sync_dist=True)
+        self._compute_metrics_step(logits.view(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels), 
+                                   self.test_step_metrics, self.test_epoch_metrics)
 
     def on_train_epoch_end(self) -> None:
         self.log_dict(self.epoch_metrics.compute(), prog_bar=True, sync_dist=True)
@@ -53,9 +65,15 @@ class LightningWrapper(L.LightningModule):
         self.epoch_metrics.reset()
         self.step_metrics.reset() 
         self.prc.reset()
+
+    def _shared_epoch_end(self, mode='val'):
+        if mode == 'val':
+            epoch_metrics = self.val_epoch_metrics
+            step_metrics = self.val_step_metrics
+        else:
+            epoch_metrics = self.test_epoch_metrics
+            step_metrics = self.test_step_metrics
         
-    def on_validation_epoch_end(self) -> None:
-        self.log_dict(self.val_epoch_metrics.compute(), prog_bar=True, sync_dist=True)
         self.prc.compute()
 
         fig, ax = plt.subplots(figsize=(10, 10))
@@ -74,8 +92,15 @@ class LightningWrapper(L.LightningModule):
         )
 
         self.loss_metric.reset()
-        self.val_step_metrics.reset()
-        self.val_epoch_metrics.reset()
+        epoch_metrics.reset()
+        step_metrics.reset()
+        self.prc.reset()
+
+    def on_validation_epoch_end(self) -> None:
+        self._shared_epoch_end('val')
+
+    def on_test_epoch_end(self):
+        self._shared_epoch_end('test')
 
     def validation_step(self, batch, batch_idx):
         loss, logits = self.classifier.predict(**batch)
