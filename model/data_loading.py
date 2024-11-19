@@ -3,7 +3,7 @@ import torch
 import numpy as np
 import json
 
-from prot_dataset import ProteinTorchDataset
+from prot_dataset import FullProteinDataset
 from sklearn.model_selection import train_test_split
 from Bio import SeqIO
 from torch.utils.data import DataLoader
@@ -149,25 +149,9 @@ def load_phospho_epsd(path : str):
     return res
 
 def prepare_datasets(args, tokenizer, ignore_label, return_datasets=False):
-    prot_data = load_prot_data(args.prot_info_path, residues=literal_eval(args.residues))
-    with open(args.train_path, 'r') as f:
-        train_prots = json.load(f)
-
-    with open(args.test_path, 'r') as f:
-        test_prots = json.load(f)
+    prot_info = load_prot_data(args.prot_info_path, residues=literal_eval(args.residues))
+    with open(args.dataset_path, 'r') as f:
+        split_info = json.load(f)
     
-    train_df, test_df = split_dataset(prot_data, train_prots, test_prots) # Split data according to the protein ids
-
-    print(f'Train dataset shape: {train_df.shape}')
-    print(f'Test dataset shape: {test_df.shape}')
-    
-    train_dataset = ProteinTorchDataset(train_df)
-    dev_dataset = ProteinTorchDataset(test_df)
-
-    train = DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=ignore_label),
-                       persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
-    dev = DataLoader(dev_dataset, args.batch_size, shuffle=False, collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=ignore_label),
-                      persistent_workers=True if args.num_workers > 0 else False, num_workers=args.num_workers)
-    if return_datasets:
-        return train, dev, train_dataset, dev_dataset
-    return train, dev
+    full_dataset = FullProteinDataset(prot_info, split_info)
+    return full_dataset

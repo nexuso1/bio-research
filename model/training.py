@@ -6,6 +6,9 @@ import datetime
 import matplotlib.pyplot as plt
 import io
 
+from torch.utils.data import DataLoader
+from data_loading import prep_batch
+from functools import partial
 from torchvision.transforms import ToTensor
 from PIL import Image
 from token_classifier_base import TokenClassifier
@@ -65,7 +68,7 @@ class LightningWrapper(L.LightningModule):
             im,
             global_step=self.current_epoch,
         )
-        
+
         self.loss_metric.reset()
 
     def validation_step(self, batch, batch_idx):
@@ -85,7 +88,7 @@ class LightningWrapper(L.LightningModule):
             "frequency" : 1
         }}
     
-def train_model(args, train, dev, model):
+def train_model(args, train, dev, test, model):
     logger = TensorBoardLogger(args.logdir, name=f'tb_log')
     chkpt_callback = ModelCheckpoint(args.o, filename='chkpt.pt', monitor='val_f1_epoch')
 
@@ -97,6 +100,10 @@ def train_model(args, train, dev, model):
     trainer = L.Trainer(logger=logger, callbacks=[chkpt_callback], max_epochs=args.epochs,
                         deterministic=True, log_every_n_steps=1,  accumulate_grad_batches=args.accum, strategy=strategy)
     trainer.fit(model, train, dev)
+    test_metrics = trainer.test(model, test)
+    print(test_metrics)
+
+    return model, test_metrics
 
 def load_from_checkpoint(checkpoint_path, create_model_fn):
     chkpt = torch.load(checkpoint_path)
@@ -112,13 +119,12 @@ def run_training(args, create_model_fn):
         )
 
     args.logdir = os.path.join("logs", log_dirname)
-    checkpoint_loaded = False
     if args.checkpoint_path is not None:
-        model, tokenizer, optim, epoch, best_f1, args = load_from_checkpoint(args.checkpoint_path, create_model_fn)
+        model, tokenizer, args = load_from_checkpoint(args.checkpoint_path, create_model_fn)
     else:
         model, tokenizer = create_model_fn(args)
     
-    train, dev = prepare_datasets(args, tokenizer, ignore_label=model.ignore_index)
+    full_dataset = prepare_datasets(args, tokenizer, ignore_label=model.ignore_index)
 
     step_metrics = torchmetrics.MetricCollection({
         'f1' : torchmetrics.F1Score(task='binary', ignore_index=model.ignore_index),
@@ -148,8 +154,27 @@ def run_training(args, create_model_fn):
     meta = Metadata()
     meta.data = {'args' : args }
     meta.save(args.logdir)
+    test = DataLoader(full_dataset.test_ds, args.batch_size, shuffle=False, 
+                      collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=model.classifier.ignore_index),
+                      persistent_workers=True if args.num_workers > 0 else False,
+                      num_workers=args.num_workers)
+    
+    master_logdir = args.logdir
+    test_metrics = {}
+    for i in range(full_dataset.n_splits):
+        args.logdir = os.path.join(master_logdir, f'fold_{i}')
+        train_ds, dev_ds = full_dataset.get_fold(i)
+        
+        train = DataLoader(train_ds, args.batch_size, shuffle=True,
+                            collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=model.classifier.ignore_index),
+                            persistent_workers=True if args.num_workers > 0 else False, 
+                            num_workers=args.num_workers )
+        dev = DataLoader(dev_ds, args.batch_size, shuffle=False,
+                            collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=model.classifier.ignore_index),
+                            persistent_workers=True if args.num_workers > 0 else False,
+                            num_workers=args.num_workers)
+    
+        training_model, test_metrics = train_model(args, train, dev, test, training_model)
 
-
-    training_model = train_model(args, train, dev, training_model)
-    save_model(args, model, args.n)
+        save_model(args, model, args.n)
     return model
