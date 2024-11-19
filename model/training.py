@@ -24,15 +24,17 @@ class LightningWrapper(L.LightningModule):
         super(LightningWrapper, self).__init__()
         self.classifier = module
         self.step_metrics = step_metrics
+        self.val_step_metrics = step_metrics.clone(prefix='val')
         self.epoch_metrics = epoch_metrics
+        self.val_epoch_metrics = epoch_metrics.clone(prefix='val')
         self.loss_metric = torchmetrics.MeanMetric()
         self.prc = torchmetrics.PrecisionRecallCurve('binary', ignore_index=self.classifier.ignore_index)
         self.test_outputs = []
         self.save_hyperparameters(args)
 
-    def _compute_metrics_step(self, logits, labels):
-        self.step_metrics.update(logits, labels)
-        self.epoch_metrics.update(logits, labels.int())
+    def _compute_metrics_step(self, logits, labels, step_metrics, epoch_metrics):
+        step_metrics.update(logits, labels)
+        epoch_metrics.update(logits, labels.int())
         self.prc.update(logits, labels.int())
         self.log_dict(self.step_metrics.compute(),sync_dist=True, prog_bar=True)
 
@@ -40,7 +42,8 @@ class LightningWrapper(L.LightningModule):
         loss, logits = self.classifier.train_predict(**batch)
         self.loss_metric.update(loss)
         self.log('train_loss', self.loss_metric.compute(), sync_dist=True, prog_bar=True)
-        self._compute_metrics_step(logits.view(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels))
+        self._compute_metrics_step(logits.view(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels),
+                                   self.step_metrics, self.epoch_metrics)
 
         return loss
 
@@ -70,12 +73,15 @@ class LightningWrapper(L.LightningModule):
         )
 
         self.loss_metric.reset()
+        self.val_step_metrics.reset()
+        self.val_epoch_metrics.reset()
 
     def validation_step(self, batch, batch_idx):
         loss, logits = self.classifier.predict(**batch)
         self.loss_metric.update(loss)
         self.log('val_loss', self.loss_metric.compute(), prog_bar=True, sync_dist=True)
-        self._compute_metrics_step(logits.view(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels))
+        self._compute_metrics_step(logits.view(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels), 
+                                   self.val_step_metrics, self.val_epoch_metrics)
 
     def configure_optimizers(self):
         optim = torch.optim.AdamW(self.classifier.parameters(), 
@@ -90,7 +96,7 @@ class LightningWrapper(L.LightningModule):
     
 def train_model(args, train, dev, test, model):
     logger = TensorBoardLogger(args.logdir, name=f'tb_log')
-    chkpt_callback = ModelCheckpoint(args.o, filename='chkpt.pt', monitor='val_f1_epoch')
+    chkpt_callback = ModelCheckpoint(args.o, filename='chkpt.pt', monitor='val_f1')
 
     # Use deepspeed 
     if torch.cuda.device_count() > 0:
