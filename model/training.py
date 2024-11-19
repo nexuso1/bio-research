@@ -52,7 +52,8 @@ class LightningWrapper(L.LightningModule):
         self.loss_metric.reset()
         self.epoch_metrics.reset()
         self.step_metrics.reset() 
-
+        self.prc.reset()
+        
     def on_validation_epoch_end(self) -> None:
         self.log_dict(self.val_epoch_metrics.compute(), prog_bar=True, sync_dist=True)
         self.prc.compute()
