@@ -41,7 +41,7 @@ class LightningWrapper(L.LightningModule):
         step_metrics.update(logits, labels)
         epoch_metrics.update(logits, labels.int())
         self.prc.update(logits, labels.int())
-        self.log_dict(self.step_metrics.compute(),sync_dist=True, prog_bar=True)
+        self.log_dict(step_metrics.compute(), sync_dist=True, prog_bar=True)
 
     def training_step(self, batch, batch_idx):
         loss, logits = self.classifier.train_predict(**batch)
@@ -74,6 +74,7 @@ class LightningWrapper(L.LightningModule):
             epoch_metrics = self.test_epoch_metrics
             step_metrics = self.test_step_metrics
         
+        self.log_dict(epoch_metrics.compute(), prog_bar=True, sync_dist=True)
         self.prc.compute()
 
         fig, ax = plt.subplots(figsize=(10, 10))
