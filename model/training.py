@@ -25,12 +25,12 @@ class LightningWrapper(L.LightningModule):
         self.classifier = module
 
         self.step_metrics = step_metrics
-        self.test_step_metrics = step_metrics.clone(prefix='test') 
-        self.val_step_metrics = step_metrics.clone(prefix='val')
+        self.test_step_metrics = step_metrics.clone(prefix='test_') 
+        self.val_step_metrics = step_metrics.clone(prefix='val_')
 
         self.epoch_metrics = epoch_metrics
-        self.test_epoch_metrics = epoch_metrics.clone(prefix='test')
-        self.val_epoch_metrics = epoch_metrics.clone(prefix='val')
+        self.test_epoch_metrics = epoch_metrics.clone(prefix='test_')
+        self.val_epoch_metrics = epoch_metrics.clone(prefix='val_')
 
         self.loss_metric = torchmetrics.MeanMetric()
         self.prc = torchmetrics.PrecisionRecallCurve('binary', ignore_index=self.classifier.ignore_index)
