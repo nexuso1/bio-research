@@ -22,7 +22,7 @@ class RNNTokenClassiferConfig(TokenClassifierConfig):
 class EncoderClassifierConfig(TokenClassifierConfig):
     hidden_size : int = 256
     n_heads : int = 8
-    n_layers : int = 1
+    n_layers : int = 4
     sr_dim : int = 256
     pos_embed_type : str = 'sin'
     sr_cnn_layers : list[ConvLayerConfig] = field(default_factory= lambda :[
@@ -58,7 +58,7 @@ class EncoderClassifier(TokenClassifier):
         
         # Setup positional embeddings
         if config.pos_embed_type == 'sin':
-            self.pos_embed = SinPositionalEncoding(config.sr_dim, 1024)
+            self.pos_embed = SinPositionalEncoding(config.sr_dim, 1026) # [seq_rep][cls]...[eos]
         # elif config.pos_embed_type == 'rope':
         #     self.pos_embed = RotaryPositionalEmbeddings(config.sr_dim // config.n_heads, 1024)
         else:
