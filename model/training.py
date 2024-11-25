@@ -48,7 +48,7 @@ class LightningWrapper(L.LightningModule):
         loss, logits = self.classifier.train_predict(**batch)
         self.loss_metric.update(loss)
         self.log('train_loss', self.loss_metric.compute(), sync_dist=True, prog_bar=True)
-        self._compute_metrics_step(logits.view(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels),
+        self._compute_metrics_step(logits.reshape(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels),
                                    self.step_metrics, self.epoch_metrics)
 
         return loss
@@ -57,7 +57,7 @@ class LightningWrapper(L.LightningModule):
         loss, logits = self.classifier.predict(**batch)
         self.loss_metric.update(loss)
         self.log('test_loss', self.loss_metric.compute(), prog_bar=True, sync_dist=True)
-        self._compute_metrics_step(logits.view(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels), 
+        self._compute_metrics_step(logits.reshape(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels), 
                                    self.test_step_metrics, self.test_epoch_metrics)
 
     def on_train_epoch_end(self) -> None:
