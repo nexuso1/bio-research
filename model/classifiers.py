@@ -95,7 +95,7 @@ class EncoderClassifier(TokenClassifier):
         proj = self.res_cnn(x)
         seq_rep = self.sr_cnn(x)
         seq_rep = self.seq_rep(seq_rep)
-        enc_mask = torch.cat([torch.ones(attention_mask.shape[0], 1), attention_mask], 1)
+        enc_mask = torch.cat([torch.ones(attention_mask.shape[0], 1, device=self.device), attention_mask], 1)
         x = torch.cat([seq_rep.unsqueeze(1), proj], axis=1)
         x = x + self.pos_embed(x)
         x = self.encoder(x, src_key_padding_mask=torch.bitwise_not(enc_mask.bool()))
