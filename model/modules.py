@@ -157,10 +157,7 @@ class Conv1dModel(torch.nn.Module):
             self.downs.append(Down1D(config.in_channels, config.out_channels, num_layers=config.num_layers,
                                       kernel_size=config.kernel_size, stride=config.stride))
         self.downs = torch.nn.ModuleList(self.downs)
-        if pool:
-            self.pool = torch.nn.AdaptiveMaxPool1d(1)
-        else:
-            self.pool = pool
+        self.pool = pool
 
     def forward(self, inputs):
         x = self.downs[0](inputs)
@@ -168,7 +165,7 @@ class Conv1dModel(torch.nn.Module):
             x = d(x)
 
         if self.pool:
-            x = self.pool(torch.moveaxis(x, -1, 1))
+            x = x.max(1)[0]
 
         return x.squeeze()
     
