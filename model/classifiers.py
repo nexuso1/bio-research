@@ -3,7 +3,6 @@ from token_classifier_base import TokenClassifier, TokenClassifierConfig
 from modules import RNNClassifier
 from dataclasses import dataclass, field
 from modules import Conv1dModel, ConvLayerConfig, SinPositionalEncoding, ResidualMLP
-from torchtune.modules import RotaryPositionalEmbeddings
 
 import torch
 
@@ -60,8 +59,8 @@ class EncoderClassifier(TokenClassifier):
         # Setup positional embeddings
         if config.pos_embed_type == 'sin':
             self.pos_embed = SinPositionalEncoding(config.sr_dim, 1024)
-        elif config.pos_embed_type == 'rope':
-            self.pos_embed = RotaryPositionalEmbeddings(config.sr_dim // config.n_heads, 1024)
+        # elif config.pos_embed_type == 'rope':
+        #     self.pos_embed = RotaryPositionalEmbeddings(config.sr_dim // config.n_heads, 1024)
         else:
             self.pos_embed = None
 
