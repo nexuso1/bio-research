@@ -2,7 +2,8 @@ from torch.nn.modules import Module
 from token_classifier_base import TokenClassifier, TokenClassifierConfig
 from modules import RNNClassifier
 from dataclasses import dataclass, field
-from modules import Conv1dModel, ConvLayerConfig
+from modules import Conv1dModel, ConvLayerConfig, SinPositionalEncoding, ResidualMLP
+from torchtune.modules import RotaryPositionalEmbeddings
 
 import torch
 
@@ -23,19 +24,20 @@ class EncoderClassifierConfig(TokenClassifierConfig):
     hidden_size : int = 256
     n_heads : int = 8
     n_layers : int = 1
-    sr_dim : int = 128
+    sr_dim : int = 256
+    pos_embed_type : str = 'sin'
     sr_cnn_layers : list[ConvLayerConfig] = field(default_factory= lambda :[
-            ConvLayerConfig(1280, 640, 7, 2, 2),
-            ConvLayerConfig(640, 320, 5, 2, 2),
-            ConvLayerConfig(320, 160, 3, 2, 2),
-            ConvLayerConfig(160, 128, 3, 1, 2)
+            ConvLayerConfig(1280, 1024, 5, 2, 2),
+            ConvLayerConfig(1024, 768, 3, 2, 2),
+            ConvLayerConfig(768, 512, 3, 2, 2),
+            ConvLayerConfig(512, 384, 3, 2, 2),
+            ConvLayerConfig(384, 256, 3, 3, 2),
         ])
     
     res_cnn_layers : list[ConvLayerConfig] = field(default_factory= lambda :[
-            ConvLayerConfig(1280, 640, 7, 2, 1),
-            ConvLayerConfig(640, 320, 5, 2, 1),
-            ConvLayerConfig(320, 160, 3, 2, 1),
-            ConvLayerConfig(160, 128, 3, 1, 1)
+            ConvLayerConfig(1280, 640, 31, 2, 1),
+            ConvLayerConfig(640, 320, 15, 2, 1),
+            ConvLayerConfig(320, 256, 7, 3, 1),
         ])
 
 @dataclass
@@ -49,38 +51,58 @@ class LinearClassifier(TokenClassifier):
         self.init_weights(self.classifier)
 
 class EncoderClassifier(TokenClassifier):
-    def __init__(self, config: TokenClassifierConfig, base_model: Module) -> None:
+    def __init__(self, config: EncoderClassifierConfig, base_model: Module) -> None:
         super().__init__(config, base_model)
-        enc_layer = torch.nn.TransformerEncoderLayer(config.sr_dim * 2, nhead=config.n_heads,
+        enc_layer = torch.nn.TransformerEncoderLayer(config.sr_dim, nhead=config.n_heads,
                                                     dim_feedforward=config.hidden_size, dropout=0,
-                                                    activation='relu')
+                                                    activation='relu', batch_first=True)
+        
+        # Setup positional embeddings
+        if config.pos_embed_type == 'sin':
+            self.pos_embed = SinPositionalEncoding(config.sr_dim, 1024)
+        elif config.pos_embed_type == 'rope':
+            self.pos_embed = RotaryPositionalEmbeddings(config.sr_dim // config.n_heads, 1024)
+        else:
+            self.pos_embed = None
+
         self.encoder = torch.nn.TransformerEncoder(enc_layer, config.n_layers)
-        self.sr_cnn = Conv1dModel(config.sr_cnn_layers, config.cnn_layers[-1].out_channels)
-        self.res_cnn = Conv1dModel(config.res_cnn_layers, )
+
+        # Create sequence-representation and residue-representation CNNs
+        self.sr_cnn = Conv1dModel(config.sr_cnn_layers, config.sr_cnn_layers[-1].out_channels)
+        self.res_cnn = Conv1dModel(config.res_cnn_layers, config.sr_cnn_layers[-1].out_channels, False)
+
+        # Create the FFN parts of these representations
         self.seq_rep = torch.nn.Sequential(
                 torch.nn.Flatten(),
-                torch.nn.BatchNorm1d(config.cnn_layers[-1].out_channels),
-                torch.nn.Linear(config.cnn_layers[-1].out_channels, config.sr_dim),
+                torch.nn.LayerNorm(config.sr_cnn_layers[-1].out_channels),
+                torch.nn.Linear(config.sr_cnn_layers[-1].out_channels, config.sr_dim),
                 torch.nn.ReLU()
             )
-        
-        self.res_rep = torch.nn.Sequential(
-                torch.nn.Flatten(),
-                torch.nn.BatchNorm1d(config.cnn_layers[-1].out_channels),
-                torch.nn.Linear(config.cnn_layers[-1].out_channels, config.sr_dim),
-                torch.nn.ReLU()
-            )
-        self.classifier = torch.nn.Sequential(
-            torch.nn.BatchNorm1d(),
-            torch.nn.Linear(config.hidden_size, config.hidden_size),
-            torch.nn.ReLU(),
-            torch.nn.Linear(config.hidden_size, config.n_labels),
-        )
 
-        self.init_weights()
+        # Create a residual MLP classifier
+        self.classifier = ResidualMLP([self.config.hidden_size, self.config.hidden_size, self.config.hidden_size, 1], input_size=config.sr_dim, activation=torch.nn.ReLU(), 
+                                  norm=torch.nn.LayerNorm)
+
+        # Initialize the modules
+        for module in self.modules():
+            module.apply(self.xavier_init)
+        
+        self.base = base_model
+    
+    def forward(self, input_ids, attention_mask, **kwargs):
+        base_out = self.base(input_ids=input_ids, attention_mask=attention_mask)
+        x = base_out[0]
+        proj = self.res_cnn(x)
+        seq_rep = self.sr_cnn(x)
+        seq_rep = self.seq_rep(seq_rep)
+        enc_mask = torch.cat([torch.ones(attention_mask.shape[0], 1), attention_mask], 1)
+        x = torch.cat([seq_rep.unsqueeze(1), proj], axis=1)
+        x = x + self.pos_embed(x)
+        x = self.encoder(x, src_key_padding_mask=torch.bitwise_not(enc_mask.bool()))
+        return self.classifier(x)[:, 1:], base_out
 
 class UniPTM(TokenClassifier):
-    def __init__(self, emb_size, num_heads, num_layers, hidden_size, dropout_rate, pos_weight=None):
+    def __init__(self, base, emb_size, num_heads, num_layers, hidden_size, dropout_rate, pos_weight=None):
         super(UniPTM, self).__init__()
         self.cnn = torch.nn.Conv1d(in_channels=emb_size, out_channels=256, kernel_size=31, padding=15) 
         self.transformer = torch.nn.TransformerEncoderLayer(d_model=256, nhead=num_heads, batch_first=True)
@@ -91,9 +113,11 @@ class UniPTM(TokenClassifier):
         self.dropout2 = torch.nn.Dropout(dropout_rate)
         self.fc3 = torch.nn.Linear(hidden_size, 1)
         self.pos_weight = pos_weight
+
+        self.base = base
         
-    def forward(self, batch):
-        emb = batch['embedding']  
+    def forward(self, input_ids, attention_mask):
+        emb = self.base(input_ids=input_ids, attention_mask=attention_mask)[0]
         emb = emb.transpose(1, 2)  
         emb = self.cnn(emb)
         emb = emb.transpose(1, 2)  
@@ -106,11 +130,19 @@ class UniPTM(TokenClassifier):
 
         return torch.sigmoid(x)
     
-     
+    def train_predict(self, input_ids: torch.Tensor, labels: torch.Tensor, attention_mask: torch.Tensor = None, return_dict=False, **kwargs):
+        self.train()
+        out = self(input_ids, attention_mask)
+        return self.weighted_BCEloss(attention_mask, labels, out)
+    
+    def predict(self, input_ids, labels):
+        self.eval()
+        with torch.no_grad():
+            return self(input_ids, labels)
 
-    def weighted_BCEloss(self, batch, outputs):
-        mask = batch['mask'].squeeze(0).bool()
-        true_y = batch['label'].squeeze(0)[mask].float()
+    def weighted_BCEloss(self, attention_mask, labels, outputs):
+        mask = attention_mask.squeeze(0).bool()
+        true_y = labels.squeeze(0)[mask].float()
         pred_y = outputs.squeeze(0)[mask].squeeze(-1)
         weights = torch.ones_like(true_y)  
         if self.pos_weight is not None:

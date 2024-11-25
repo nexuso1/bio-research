@@ -56,6 +56,7 @@ parser.add_argument('--model_path', help='Load model from this path (not a check
 parser.add_argument('--use_cnn', help='Use CNN seq reps', action='store_true', default=False)
 parser.add_argument('--focal', help='Use focal loss. In this mode, pos_weight will be treated as the alpha parameter.', action='store_true', default=False)
 parser.add_argument('--residues', help='List of residues to train on', default="['S', 'T', 'Y']", type=str)
+parser.add_argument('--ignore_label', help='Label that will be ignored by the loss', default=-1, type=int)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)

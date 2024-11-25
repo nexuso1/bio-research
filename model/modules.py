@@ -1,6 +1,6 @@
 import torch
 import torch.utils
-from collections import namedtuple
+import math
 from dataclasses import dataclass
 
 def keras_init(module):
@@ -31,30 +31,30 @@ class ConvNormActiv1D(torch.nn.Module):
     def __init__(self, in_channels : int, out_channels : int, kernel_size : int, stride : int, padding : int) -> None:
         super().__init__()
         self.conv = torch.nn.Conv1d(in_channels, out_channels, kernel_size=kernel_size, padding=padding, stride=stride)
-        self.norm = torch.nn.BatchNorm1d(out_channels)
+        self.norm = torch.nn.LayerNorm(out_channels)
         self.activ = torch.nn.ReLU()
 
     def forward(self, inputs : torch.Tensor):
         x = self.conv(inputs)
-        x = self.norm(x)
-        return self.activ(x)
+        x = self.norm(x.moveaxis(-1, 1))
+        return self.activ(x.moveaxis(1, -1))
     
 class TransposeConvNormActiv1D(torch.nn.Module):
     def __init__(self, in_channels : int, out_channels : int, kernel_size : int, stride : int, padding : int) -> None:
         super().__init__()
         self.conv = torch.nn.ConvTranspose1d(in_channels, out_channels, kernel_size=kernel_size, padding=padding, stride=stride)
-        self.norm = torch.nn.BatchNorm1d(out_channels)
+        self.norm = torch.nn.LayerNorm(out_channels)
         self.activ = torch.nn.ReLU()
 
     def forward(self, inputs : torch.Tensor):
         x = self.conv(inputs)
-        x = self.norm(x)
-        return self.activ(x)
+        x = self.norm(x.moveaxis(-1, 1))
+        return self.activ(x.moveaxis(1, -1))
 
 class Up1D(torch.nn.Module):
     def __init__(self, in_channels : int, out_channels : int, num_layers : int = 3, kernel_size : int = 3, stride : int = 2):
         super().__init__()
-        self.up = TransposeConvNormActiv1D(in_channels, out_channels, kernel_size=2, stride=stride, 
+        self.up = TransposeConvNormActiv1D(in_channels, out_channels, kernel_size=3, stride=stride, 
                                            padding=1)
         self.layers = []
         for _ in range(num_layers-1):
@@ -79,7 +79,7 @@ class Up1D(torch.nn.Module):
 class Down1D(torch.nn.Module):
     def __init__(self, in_channels, out_channels, num_layers=3, kernel_size=3, stride=2) -> None:
         super().__init__()
-        self.down = ConvNormActiv1D(in_channels, out_channels, kernel_size=2, stride=stride, 
+        self.down = ConvNormActiv1D(in_channels, out_channels, kernel_size=3, stride=stride,
                                     padding=1)
         self.layers = []
         for _ in range(num_layers-1):
@@ -150,21 +150,26 @@ class Unet1D(torch.nn.Module):
 
 
 class Conv1dModel(torch.nn.Module):
-    def __init__(self, layer_configs : list[ConvLayerConfig], out_dim : int) -> None:
+    def __init__(self, layer_configs : list[ConvLayerConfig], out_dim : int, pool=True) -> None:
         super().__init__()
         self.downs = []
         for config in layer_configs:
             self.downs.append(Down1D(config.in_channels, config.out_channels, num_layers=config.num_layers,
                                       kernel_size=config.kernel_size, stride=config.stride))
         self.downs = torch.nn.ModuleList(self.downs)
-        self.pool = torch.nn.AdaptiveMaxPool1d(1)
+        if pool:
+            self.pool = torch.nn.AdaptiveMaxPool1d(1)
+        else:
+            self.pool = pool
 
     def forward(self, inputs):
         x = self.downs[0](inputs)
         for d in self.downs[1:]:
             x = d(x)
 
-        x = self.pool(torch.moveaxis(x, -1, 1))
+        if self.pool:
+            x = self.pool(torch.moveaxis(x, -1, 1))
+
         return x.squeeze()
     
 class DummyModule(torch.nn.Module):
@@ -174,3 +179,57 @@ class DummyModule(torch.nn.Module):
 
     def forward(self, *args, **kwargs):
         return torch.zeros(size=self.out_shape)
+
+class SinPositionalEncoding(torch.nn.Module):
+    def __init__(self, d_model: int, max_len : int):
+        super().__init__()
+
+        positions = torch.arange(0, max_len).unsqueeze_(1)
+        pe = torch.zeros(max_len, d_model)
+        n = 10000
+        denominators = torch.exp(torch.arange(0, d_model, 2) * (-math.log(n) / d_model)) # 10000^(2i/d_model), i is the index of embedding
+        pe[:, 0::2] = torch.sin(positions * denominators) # sin(pos/10000^(2i/d_model))
+        pe[:, 1::2] = torch.cos(positions * denominators) # cos(pos/10000^(2i/d_model))
+        pe = pe.unsqueeze(0)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x : torch.Tensor):
+        """
+        Arguments:
+            x: Tensor, shape ``[batch_size, seq_len, embedding_dim]`` or [batch_size, seq_len, n_head, embedding // n_head]
+        """
+        if x.dim() == 4:
+            return x + self.pe[0, :x.size(1)].view(1, -1, x.size(2), x.size(3))
+        
+        return x + self.pe[0, :x.size(1)]
+    
+class ResidualMLP(torch.nn.Module):
+    def __init__(self, layer_sizes: list[int], input_size,  activation=None, norm=False, ):
+        super(ResidualMLP, self).__init__()
+        layer_list = []
+        layer_list.append(torch.nn.Linear(input_size, layer_sizes[0]))
+        for i in range(len(layer_sizes) - 1):
+            layer_list.append(torch.nn.Linear(layer_sizes[i], layer_sizes[i + 1]))
+        
+        self.layers = torch.nn.ModuleList(layer_list)
+        self.activation = activation
+        if norm is not None:
+            norms = []
+            norms.append(norm(input_size))
+            for i in range(len(layer_list) - 1):
+                norms.append(norm(layer_sizes[i]))
+            self.norms = torch.nn.ModuleList(norms)
+
+    def forward(self, x):
+        for i in range(len(self.layers) - 1):
+            if len(self.norms) > 0:
+                y = self.norms[i](x)
+
+            y = self.layers[i](y)
+            if self.activation is not None:
+                y = self.activation(y)
+            
+            x = x + y
+
+        x = self.norms[-1](x)
+        return self.layers[-1](x)

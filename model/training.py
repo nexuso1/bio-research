@@ -17,13 +17,14 @@ from utils import Metadata
 from esm import save_model, device
 from lightning.pytorch.loggers import TensorBoardLogger
 from data_loading import prepare_datasets
+from transformers import AutoTokenizer
 
 class LightningWrapper(L.LightningModule):
     def __init__(self, args, module : TokenClassifier, epoch_metrics : torchmetrics.MetricCollection,
-                 step_metrics : torchmetrics.MetricCollection):
+                 step_metrics : torchmetrics.MetricCollection, ds_size : int):
         super(LightningWrapper, self).__init__()
         self.classifier = module
-
+        self.ds_size = ds_size
         self.step_metrics = step_metrics
         self.test_step_metrics = step_metrics.clone(prefix='test_') 
         self.val_step_metrics = step_metrics.clone(prefix='val_')
@@ -107,14 +108,14 @@ class LightningWrapper(L.LightningModule):
         loss, logits = self.classifier.predict(**batch)
         self.loss_metric.update(loss)
         self.log('val_loss', self.loss_metric.compute(), prog_bar=True, sync_dist=True)
-        self._compute_metrics_step(logits.view(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels), 
+        self._compute_metrics_step(logits.reshape(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels), 
                                    self.val_step_metrics, self.val_epoch_metrics)
 
     def configure_optimizers(self):
         optim = torch.optim.AdamW(self.classifier.parameters(), 
                                   lr=self.hparams.lr,
                                   weight_decay=self.hparams.weight_decay)
-        schedule = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, mode='min', factor=0.5, patience=2)
+        schedule = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optim, T_0=self.ds_size)
         return {'optimizer' : optim, 'lr_scheduler' : { 
             "scheduler" : schedule,
             "monitor" : "train_loss",
@@ -143,6 +144,26 @@ def load_from_checkpoint(checkpoint_path, create_model_fn):
     model = create_model_fn(chkpt['hyper_parameters'])
     return LightningWrapper.load_from_checkpoint(chkpt, module=model)
 
+def get_tokenizer(args):
+    if args.type == '3B' :
+        tokenizer = AutoTokenizer.from_pretrained('facebook/esm2_t36_3B_UR50D')
+    elif type == '15B':
+        tokenizer = AutoTokenizer.from_pretrained('facebook/esm2_t48_15B_UR50D')
+    elif type == '35M':
+        tokenizer = AutoTokenizer.from_pretrained('facebook/esm2_t12_35M_UR50D')
+    else:
+        tokenizer = AutoTokenizer.from_pretrained('facebook/esm2_t33_650M_UR50D')
+
+    return tokenizer
+
+def prepare_model(args, create_model_fn):
+    if args.checkpoint_path is not None:
+        model, tokenizer, args = load_from_checkpoint(args.checkpoint_path, create_model_fn)
+    else:
+        model, tokenizer = create_model_fn(args)
+
+    return model, tokenizer
+
 def run_training(args, create_model_fn):
     L.seed_everything(args.seed)
 
@@ -152,62 +173,74 @@ def run_training(args, create_model_fn):
         )
 
     args.logdir = os.path.join("logs", log_dirname)
-    if args.checkpoint_path is not None:
-        model, tokenizer, args = load_from_checkpoint(args.checkpoint_path, create_model_fn)
-    else:
-        model, tokenizer = create_model_fn(args)
     
-    full_dataset = prepare_datasets(args, tokenizer, ignore_label=model.ignore_index)
+    tokenizer = get_tokenizer(args)
+    
+    full_dataset = prepare_datasets(args, tokenizer, ignore_label=args.ignore_label)
 
     step_metrics = torchmetrics.MetricCollection({
-        'f1' : torchmetrics.F1Score(task='binary', ignore_index=model.ignore_index),
-        'precision' : torchmetrics.Precision(task='binary',ignore_index=model.ignore_index),
-        'recall' : torchmetrics.Recall(task='binary', ignore_index=model.ignore_index),
+        'f1' : torchmetrics.F1Score(task='binary', ignore_index=args.ignore_label),
+        'precision' : torchmetrics.Precision(task='binary',ignore_index=args.ignore_label),
+        'recall' : torchmetrics.Recall(task='binary', ignore_index=args.ignore_label),
     })
 
     epoch_metrics = torchmetrics.MetricCollection({
-        'f1' : torchmetrics.F1Score(task='binary', ignore_index=model.ignore_index),
-        'precision' : torchmetrics.Precision(task='binary',ignore_index=model.ignore_index),
-        'recall' : torchmetrics.Recall(task='binary', ignore_index=model.ignore_index),
-        'auroc' : torchmetrics.AUROC('binary', ignore_index=model.ignore_index),
-        'auprc' : torchmetrics.AveragePrecision('binary', ignore_index=model.ignore_index),
-        'mcc' : torchmetrics.MatthewsCorrCoef('binary', ignore_index=model.ignore_index)
+        'f1' : torchmetrics.F1Score(task='binary', ignore_index=args.ignore_label),
+        'precision' : torchmetrics.Precision(task='binary',ignore_index=args.ignore_label),
+        'recall' : torchmetrics.Recall(task='binary', ignore_index=args.ignore_label),
+        'auroc' : torchmetrics.AUROC('binary', ignore_index=args.ignore_label),
+        'auprc' : torchmetrics.AveragePrecision('binary', ignore_index=args.ignore_label),
+        'mcc' : torchmetrics.MatthewsCorrCoef('binary', ignore_index=args.ignore_label)
     })
 
-    model = LightningWrapper(args, model, step_metrics=step_metrics, epoch_metrics=epoch_metrics)
-    if args.compile:
-        # Compile the model, useful in general on Ampere architectures and further
-        compiled_model = torch.compile(model)
-        compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
-        training_model = compiled_model
-    else:
-        training_model = model.to(device)
-    
     # Create metadata
     meta = Metadata()
     meta.data = {'args' : args }
     meta.save(args.logdir)
     test = DataLoader(full_dataset.test_ds, args.batch_size, shuffle=False, 
-                      collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=model.classifier.ignore_index),
+                      collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=args.ignore_label),
                       persistent_workers=True if args.num_workers > 0 else False,
                       num_workers=args.num_workers)
     
     master_logdir = args.logdir
-    test_metrics = {}
+    metric_hist = {}
     for i in range(full_dataset.n_splits):
         args.logdir = os.path.join(master_logdir, f'fold_{i}')
         train_ds, dev_ds = full_dataset.get_fold(i)
         
         train = DataLoader(train_ds, args.batch_size, shuffle=True,
-                            collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=model.classifier.ignore_index),
+                            collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=args.ignore_label),
                             persistent_workers=True if args.num_workers > 0 else False, 
                             num_workers=args.num_workers )
         dev = DataLoader(dev_ds, args.batch_size, shuffle=False,
-                            collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=model.classifier.ignore_index),
+                            collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=args.ignore_label),
                             persistent_workers=True if args.num_workers > 0 else False,
                             num_workers=args.num_workers)
+        
+        model, tokenizer = prepare_model(args, create_model_fn)
+        model = LightningWrapper(args, model, step_metrics=step_metrics, epoch_metrics=epoch_metrics, ds_size=len(train))
+
+        if args.compile:
+            # Compile the model, useful in general on Ampere architectures and further
+            compiled_model = torch.compile(model)
+            compiled_model.to(device) # We cannot save the compiled model, but it shares weights with the original, so we save that instead
+            training_model = compiled_model
+        else:
+            training_model = model.to(device)
     
         training_model, test_metrics = train_model(args, train, dev, test, training_model)
+        monitor_metric = 'test_f1'
+        monitor_best_val = 0
 
-        save_model(args, model, args.n)
+        if len(test_metrics.keys()) == 0:
+            metric_hist = test_metrics
+        
+        print(f'Test metric averages after epoch {i}')
+        for metric in metric_hist:
+            metric_hist[metric] += test_metrics[metric]
+            print(f'{metric}: {metric_hist[metric_hist] / i}')
+
+        if monitor_best_val > test_metrics[monitor_metric]:
+            monitor_best_val = test_metrics[monitor_metric]
+            save_model(args, model, args.n)
     return model
