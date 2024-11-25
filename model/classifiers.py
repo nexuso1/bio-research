@@ -22,21 +22,22 @@ class RNNTokenClassiferConfig(TokenClassifierConfig):
 class EncoderClassifierConfig(TokenClassifierConfig):
     hidden_size : int = 256
     n_heads : int = 8
-    n_layers : int = 4
+    n_layers : int = 6
     sr_dim : int = 256
     pos_embed_type : str = 'sin'
     sr_cnn_layers : list[ConvLayerConfig] = field(default_factory= lambda :[
-            ConvLayerConfig(1280, 1024, 5, 2, 2),
-            ConvLayerConfig(1024, 768, 3, 2, 2),
-            ConvLayerConfig(768, 512, 3, 2, 2),
-            ConvLayerConfig(512, 384, 3, 2, 2),
-            ConvLayerConfig(384, 256, 3, 3, 2),
+            ConvLayerConfig(1280, 256, 5, 2, 2),
+            ConvLayerConfig(256, 256, 5, 2, 2),
+            ConvLayerConfig(256, 256, 5, 2, 2),
+            ConvLayerConfig(256, 256, 5, 2, 2),
+            # ConvLayerConfig(1024, 768, 3, 2, 2),
+            # ConvLayerConfig(768, 512, 3, 2, 2),
+            # ConvLayerConfig(512, 384, 3, 2, 2),
+            # ConvLayerConfig(384, 256, 3, 3, 2),
         ])
     
     res_cnn_layers : list[ConvLayerConfig] = field(default_factory= lambda :[
-            ConvLayerConfig(1280, 640, 31, 2, 1),
-            ConvLayerConfig(640, 320, 15, 2, 1),
-            ConvLayerConfig(320, 256, 7, 3, 1),
+            ConvLayerConfig(1280, 256, 31, 4, 1),
         ])
 
 @dataclass
