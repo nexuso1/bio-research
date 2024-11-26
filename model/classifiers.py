@@ -119,26 +119,27 @@ class UniPTM(TokenClassifier):
         self.base = base
     
     def forward(self, input_ids, attention_mask, **kwargs):
-        emb = self.base(input_ids=input_ids, attention_mask=attention_mask)[0]
+        base_out = self.base(input_ids=input_ids, attention_mask=attention_mask)
+        emb = base_out[0]
         emb = emb.transpose(1, 2)  
         emb = self.cnn(emb)
         emb = emb.transpose(1, 2)  
         x = self.encoder(emb)
         x = torch.nn.functional.relu(self.fc1(x))
         x = self.dropout1(x)
-        x = torch.nn.functional.F.relu(self.fc2(x))
+        x = torch.nn.functional.relu(self.fc2(x))
         x = self.dropout2(x)
         x = self.fc3(x)
 
-        return torch.sigmoid(x)
+        return x, base_out
     
     def train_predict(self, input_ids: torch.Tensor, labels: torch.Tensor, attention_mask: torch.Tensor = None, return_dict=False, **kwargs):
         self.train()
-        out = self(input_ids, attention_mask)
-        return torch.log(out), self.weighted_BCEloss(attention_mask, labels, out)
+        out = self(input_ids, attention_mask)[0]
+        return self.weighted_BCEloss(labels != -1, labels, torch.sigmoid(out)), out 
 
-    def weighted_BCEloss(self, attention_mask, labels, outputs):
-        mask = attention_mask.squeeze(0).bool()
+    def weighted_BCEloss(self, mask, labels, outputs):
+        mask = mask.squeeze(0).bool()
         true_y = labels.squeeze(0)[mask].float()
         pred_y = outputs.squeeze(0)[mask].squeeze(-1)
         weights = torch.ones_like(true_y)  
