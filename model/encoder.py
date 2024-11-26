@@ -3,7 +3,9 @@ from training import run_training
 from esm import parser, get_esm, create_loss
 
 def create_model(args):
-    conf = EncoderClassifierConfig(1, loss = create_loss(args))
+    mlp_layers = [args.hidden_size for _ in range(args.n_layers_mlp)] + [1]
+    conf = EncoderClassifierConfig(1, loss = create_loss(args), mlp_layers=mlp_layers,
+                                   n_layers=args.n_layers)
     base, tokenizer = get_esm(conf.base_type)
     classifier = EncoderClassifier(conf, base)
 
@@ -16,5 +18,6 @@ def main(args):
     run_training(args, create_model)
 
 if __name__ == '__main__':
+    parser.add_argument('--n_layers_mlp', type=int, help='Number of MLP classifier layers', default=3)
     args = parser.parse_args()
     main(args)

@@ -201,7 +201,7 @@ class SinPositionalEncoding(torch.nn.Module):
         return x + self.pe[0, :x.size(1)]
     
 class ResidualMLP(torch.nn.Module):
-    def __init__(self, layer_sizes: list[int], input_size,  activation=None, norm=False, ):
+    def __init__(self, layer_sizes: list[int], input_size,  activation=None, norm=False, dropout=0):
         super(ResidualMLP, self).__init__()
         layer_list = []
         layer_list.append(torch.nn.Linear(input_size, layer_sizes[0]))
@@ -217,6 +217,8 @@ class ResidualMLP(torch.nn.Module):
                 norms.append(norm(layer_sizes[i]))
             self.norms = torch.nn.ModuleList(norms)
 
+        self.dropout = torch.nn.Dropout(dropout)
+
     def forward(self, x):
         for i in range(len(self.layers) - 1):
             if len(self.norms) > 0:
@@ -227,6 +229,7 @@ class ResidualMLP(torch.nn.Module):
                 y = self.activation(y)
             
             x = x + y
+            x = self.dropout(x)
 
         x = self.norms[-1](x)
         return self.layers[-1](x)

@@ -54,7 +54,7 @@ class EncoderClassifier(TokenClassifier):
     def __init__(self, config: EncoderClassifierConfig, base_model: Module) -> None:
         super().__init__(config, base_model)
         enc_layer = torch.nn.TransformerEncoderLayer(config.sr_dim, nhead=config.n_heads,
-                                                    dim_feedforward=config.hidden_size, dropout=0,
+                                                    dim_feedforward=config.hidden_size,
                                                     activation='relu', batch_first=True)
         
         # Setup positional embeddings
