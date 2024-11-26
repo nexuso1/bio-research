@@ -134,7 +134,7 @@ class LightningWrapper(L.LightningModule):
     
 def train_model(args, train, dev, test, model):
     logger = TensorBoardLogger(args.logdir, name=f'tb_log')
-    chkpt_callback = ModelCheckpoint(args.o, filename='chkpt.pt', monitor='val_f1')
+    chkpt_callback = ModelCheckpoint(args.logdir, filename='chkpt.pt', monitor='val_f1')
     es_callback = EarlyStopping('val_loss', patience=40)
 
     # Use deepspeed 
