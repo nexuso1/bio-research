@@ -52,7 +52,8 @@ class TransposeConvNormActiv1D(torch.nn.Module):
         return self.activ(x.moveaxis(1, -1))
 
 class Up1D(torch.nn.Module):
-    def __init__(self, in_channels : int, out_channels : int, num_layers : int = 3, kernel_size : int = 3, stride : int = 2):
+    def __init__(self, in_channels : int, out_channels : int, num_layers : int = 3, kernel_size : int = 3, stride : int = 2,
+                 dropout=0):
         super().__init__()
         self.up = TransposeConvNormActiv1D(in_channels, out_channels, kernel_size=3, stride=stride, 
                                            padding=1)
@@ -62,6 +63,8 @@ class Up1D(torch.nn.Module):
         
         # Needed for Torch to see the list of modules as a part of the graph
         self.layers = torch.nn.ModuleList(self.layers)
+        self.dropout= torch.nn.Dropout1d(dropout)
+        
     def forward(self, inputs : torch.Tensor, connected : torch.Tensor = None):
         """
         Expects inputs in shape [batch, sequence, channels], 
@@ -77,7 +80,7 @@ class Up1D(torch.nn.Module):
         return torch.moveaxis(x, 1, -1)
 
 class Down1D(torch.nn.Module):
-    def __init__(self, in_channels, out_channels, num_layers=3, kernel_size=3, stride=2) -> None:
+    def __init__(self, in_channels, out_channels, num_layers=3, kernel_size=3, stride=2, dropout=0) -> None:
         super().__init__()
         self.down = ConvNormActiv1D(in_channels, out_channels, kernel_size=3, stride=stride,
                                     padding=1)
@@ -86,14 +89,18 @@ class Down1D(torch.nn.Module):
             self.layers.append(ConvNormActiv1D(out_channels, out_channels, kernel_size=kernel_size, padding=(kernel_size - 1) // 2, stride=1))
         # Needed for Torch to see the list of modules as a part of the graph
         self.layers = torch.nn.ModuleList(self.layers)
-
+        self.dropout = torch.nn.Dropout1d(dropout)
+        
     def forward(self, inputs : torch.Tensor):
         x = torch.moveaxis(inputs, -1, 1)
         x = self.down(x)
+        x = self.dropout(x)
         if len(self.layers) > 0:
             x = self.layers[0](x)
+            x = self.dropout(x)
         for i in range(1, len(self.layers)):
             x = x + self.layers[i](x) # Residual connection
+            x = self.dropout(x)
         return torch.moveaxis(x, 1, -1)
     
 
@@ -155,7 +162,7 @@ class Conv1dModel(torch.nn.Module):
         self.downs = []
         for config in layer_configs:
             self.downs.append(Down1D(config.in_channels, config.out_channels, num_layers=config.num_layers,
-                                      kernel_size=config.kernel_size, stride=config.stride))
+                                      kernel_size=config.kernel_size, stride=config.stride, dropout=dropout))
         self.downs = torch.nn.ModuleList(self.downs)
         self.pool = pool
 
