@@ -12,7 +12,7 @@ from functools import partial
 from torchvision.transforms import ToTensor
 from PIL import Image
 from token_classifier_base import TokenClassifier
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from utils import Metadata
 from esm import save_model, device
 from lightning.pytorch.loggers import TensorBoardLogger
@@ -35,7 +35,8 @@ class LightningWrapper(L.LightningModule):
 
         self.loss_metric = torchmetrics.MeanMetric()
         self.prc = torchmetrics.PrecisionRecallCurve('binary', ignore_index=self.classifier.ignore_index)
-        self.test_outputs = []
+        self.test_preds = []
+        self.test_preds_tentative = []
         self.save_hyperparameters(args)
 
     def _compute_metrics_step(self, logits, labels, step_metrics, epoch_metrics):
@@ -55,6 +56,7 @@ class LightningWrapper(L.LightningModule):
     
     def test_step(self, batch, batch_idx):
         loss, logits = self.classifier.predict(**batch)
+        self.test_preds_tentative.append((logits, batch_idx))
         self.loss_metric.update(loss)
         self.log('test_loss', self.loss_metric.compute(), prog_bar=True, sync_dist=True)
         self._compute_metrics_step(logits.reshape(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels), 
@@ -125,13 +127,14 @@ class LightningWrapper(L.LightningModule):
 def train_model(args, train, dev, test, model):
     logger = TensorBoardLogger(args.logdir, name=f'tb_log')
     chkpt_callback = ModelCheckpoint(args.o, filename='chkpt.pt', monitor='val_f1')
+    es_callback = EarlyStopping('val_loss', patience=40)
 
     # Use deepspeed 
     if torch.cuda.device_count() > 0:
         strategy = "deepspeed_stage_2"
     else:
         strategy = "auto"
-    trainer = L.Trainer(logger=logger, callbacks=[chkpt_callback], max_epochs=args.epochs,
+    trainer = L.Trainer(logger=logger, callbacks=[chkpt_callback, es_callback], max_epochs=args.epochs,
                         deterministic=True, log_every_n_steps=1,  accumulate_grad_batches=args.accum, strategy=strategy)
     trainer.fit(model, train, dev)
     test_metrics = trainer.test(model, test)
