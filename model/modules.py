@@ -150,7 +150,7 @@ class Unet1D(torch.nn.Module):
 
 
 class Conv1dModel(torch.nn.Module):
-    def __init__(self, layer_configs : list[ConvLayerConfig], out_dim : int, pool=True) -> None:
+    def __init__(self, layer_configs : list[ConvLayerConfig], out_dim : int, pool=True, dropout=0) -> None:
         super().__init__()
         self.downs = []
         for config in layer_configs:

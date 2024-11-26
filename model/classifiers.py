@@ -40,7 +40,7 @@ class EncoderClassifierConfig(TokenClassifierConfig):
             ConvLayerConfig(1280, 256, 31, 4, 1),
         ])
     mlp_layers : list[int] = field(default_factory=lambda : [256, 256, 256, 1])
-    
+
 @dataclass
 class SelectiveFinetuningClassifierConfig(TokenClassifierConfig):
     unfreeze_indices : list[int] = field(default_factory= lambda : [-1])
@@ -104,8 +104,8 @@ class EncoderClassifier(TokenClassifier):
         return self.classifier(x)[:, 1:], base_out
 
 class UniPTM(TokenClassifier):
-    def __init__(self, base, emb_size, num_heads, num_layers, hidden_size, dropout_rate, pos_weight=None):
-        super(UniPTM, self).__init__()
+    def __init__(self, config, base, emb_size, num_heads, num_layers, hidden_size, dropout_rate, pos_weight=None):
+        super(UniPTM, self).__init__(base_model=base, config=config)
         self.cnn = torch.nn.Conv1d(in_channels=emb_size, out_channels=256, kernel_size=31, padding=15) 
         self.transformer = torch.nn.TransformerEncoderLayer(d_model=256, nhead=num_heads, batch_first=True)
         self.encoder = torch.nn.TransformerEncoder(self.transformer, num_layers=num_layers)
@@ -117,8 +117,8 @@ class UniPTM(TokenClassifier):
         self.pos_weight = pos_weight
 
         self.base = base
-        
-    def forward(self, input_ids, attention_mask):
+    
+    def forward(self, input_ids, attention_mask, **kwargs):
         emb = self.base(input_ids=input_ids, attention_mask=attention_mask)[0]
         emb = emb.transpose(1, 2)  
         emb = self.cnn(emb)
@@ -135,12 +135,7 @@ class UniPTM(TokenClassifier):
     def train_predict(self, input_ids: torch.Tensor, labels: torch.Tensor, attention_mask: torch.Tensor = None, return_dict=False, **kwargs):
         self.train()
         out = self(input_ids, attention_mask)
-        return self.weighted_BCEloss(attention_mask, labels, out)
-    
-    def predict(self, input_ids, labels):
-        self.eval()
-        with torch.no_grad():
-            return self(input_ids, labels)
+        return torch.log(out), self.weighted_BCEloss(attention_mask, labels, out)
 
     def weighted_BCEloss(self, attention_mask, labels, outputs):
         mask = attention_mask.squeeze(0).bool()
