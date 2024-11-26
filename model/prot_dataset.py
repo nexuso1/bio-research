@@ -36,7 +36,7 @@ class FullProteinDataset:
         test = reindexed.loc[self.split_info['test']]
         train = reindexed.loc[self.split_info['train']]
         self.train_df = train
-        self.test_ds = ProteinDataset(test)
+        self.test_ds = ProteinDataset(test.reset_index(level='id'))
 
         print(f'Test size: {len(self.test_ds)}')
         print(f'Average fold train size: {sum([len(self.split_info["splits"][i]["train"]) for i in range(self.n_splits)]) / self.n_splits}')
