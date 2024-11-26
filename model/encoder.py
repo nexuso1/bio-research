@@ -5,7 +5,7 @@ from esm import parser, get_esm, create_loss
 def create_model(args):
     mlp_layers = [args.hidden_size for _ in range(args.n_layers_mlp)] + [1]
     conf = EncoderClassifierConfig(1, loss = create_loss(args), mlp_layers=mlp_layers,
-                                   n_layers=args.n_layers)
+                                   n_layers=args.n_layers, dropout_rate=args.dropout)
     base, tokenizer = get_esm(conf.base_type)
     classifier = EncoderClassifier(conf, base)
 

@@ -39,7 +39,8 @@ class EncoderClassifierConfig(TokenClassifierConfig):
     res_cnn_layers : list[ConvLayerConfig] = field(default_factory= lambda :[
             ConvLayerConfig(1280, 256, 31, 4, 1),
         ])
-
+    mlp_layers : list[int] = field(default_factory=lambda : [256, 256, 256, 1])
+    
 @dataclass
 class SelectiveFinetuningClassifierConfig(TokenClassifierConfig):
     unfreeze_indices : list[int] = field(default_factory= lambda : [-1])
