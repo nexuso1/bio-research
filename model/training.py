@@ -36,40 +36,45 @@ class LightningWrapper(L.LightningModule):
         self.loss_metric = torchmetrics.MeanMetric()
         self.prc = torchmetrics.PrecisionRecallCurve('binary', ignore_index=self.classifier.ignore_index)
         self.test_preds = []
-        self.test_preds_tentative = []
-        self.best_test_score = 0
         self.save_hyperparameters(args)
 
     def _compute_metrics_step(self, logits, labels, step_metrics, epoch_metrics):
         step_metrics.update(logits, labels)
         epoch_metrics.update(logits, labels.int())
         self.prc.update(logits, labels.int())
-        self.log_dict(step_metrics.compute(), sync_dist=True, prog_bar=True)
+        self.log_dict(step_metrics.compute(), logger=True, sync_dist=True, prog_bar=True)
 
     def training_step(self, batch, batch_idx):
         loss, logits = self.classifier.train_predict(**batch)
         self.loss_metric.update(loss)
-        self.log('train_loss', self.loss_metric.compute(), sync_dist=True, prog_bar=True)
+        self.log('train_loss', self.loss_metric.compute(), logger=True, sync_dist=True, prog_bar=True)
         self._compute_metrics_step(logits.reshape(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels),
                                    self.step_metrics, self.epoch_metrics)
 
         return loss
     
+    def validation_step(self, batch, batch_idx):
+        loss, logits = self.classifier.predict(**batch)
+        self.loss_metric.update(loss)
+        self.log('val_loss', self.loss_metric.compute(), logger=True, prog_bar=True, sync_dist=True)
+        self._compute_metrics_step(logits.reshape(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels), 
+                                   self.val_step_metrics, self.val_epoch_metrics)
+    
     def test_step(self, batch, batch_idx):
         loss, logits = self.classifier.predict(**batch)
-        self.test_preds_tentative.append((logits, batch_idx))
+        self.test_preds.append((logits.squeeze(), batch['indices'].squeeze()))
         self.loss_metric.update(loss)
-        self.log('test_loss', self.loss_metric.compute(), prog_bar=True, sync_dist=True)
+        self.log('test_loss', self.loss_metric.compute(), logger=True, prog_bar=True, sync_dist=True)
         self._compute_metrics_step(logits.reshape(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels), 
                                    self.test_step_metrics, self.test_epoch_metrics)
 
     def on_train_epoch_end(self) -> None:
-        self.log_dict(self.epoch_metrics.compute(), prog_bar=True, sync_dist=True)
+        self.log_dict(self.epoch_metrics.compute(), logger=True, prog_bar=True, sync_dist=True)
         self.loss_metric.reset()
         self.epoch_metrics.reset()
         self.step_metrics.reset() 
         self.prc.reset()
-
+ 
     def _shared_epoch_end(self, mode='val'):
         if mode == 'val':
             epoch_metrics = self.val_epoch_metrics
@@ -79,11 +84,13 @@ class LightningWrapper(L.LightningModule):
             step_metrics = self.test_step_metrics
 
         if mode == 'test':
-            preds, indices = zip(*self.test_preds_tentative)
+            preds, indices = zip(*self.test_preds)
+            preds = torch.cat(preds)
+            indices = torch.cat(indices)
             torch.save(preds,f'{self.hparams.logdir}/preds.pt')
             torch.save(indices,f'{self.hparams.logdir}/indices.pt')
 
-        self.log_dict(epoch_metrics.compute(), prog_bar=True, sync_dist=True)
+        self.log_dict(epoch_metrics.compute(), prog_bar=True, logger=True, sync_dist=True)
         self.prc.compute()
 
         fig, ax = plt.subplots(figsize=(10, 10))
@@ -112,12 +119,7 @@ class LightningWrapper(L.LightningModule):
     def on_test_epoch_end(self):
         self._shared_epoch_end('test')
 
-    def validation_step(self, batch, batch_idx):
-        loss, logits = self.classifier.predict(**batch)
-        self.loss_metric.update(loss)
-        self.log('val_loss', self.loss_metric.compute(), prog_bar=True, sync_dist=True)
-        self._compute_metrics_step(logits.reshape(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels), 
-                                   self.val_step_metrics, self.val_epoch_metrics)
+
 
     def configure_optimizers(self):
         optim = torch.optim.AdamW(self.classifier.parameters(), 

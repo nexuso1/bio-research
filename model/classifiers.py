@@ -22,7 +22,7 @@ class RNNTokenClassiferConfig(TokenClassifierConfig):
 class EncoderClassifierConfig(TokenClassifierConfig):
     hidden_size : int = 256
     n_heads : int = 8
-    n_layers : int = 6
+    n_layers : int = 1
     sr_dim : int = 256
     pos_embed_type : str = 'sin'
     sr_cnn_layers : list[ConvLayerConfig] = field(default_factory= lambda :[
