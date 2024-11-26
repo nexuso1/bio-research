@@ -37,6 +37,7 @@ class LightningWrapper(L.LightningModule):
         self.prc = torchmetrics.PrecisionRecallCurve('binary', ignore_index=self.classifier.ignore_index)
         self.test_preds = []
         self.test_preds_tentative = []
+        self.best_test_score = 0
         self.save_hyperparameters(args)
 
     def _compute_metrics_step(self, logits, labels, step_metrics, epoch_metrics):
@@ -76,7 +77,12 @@ class LightningWrapper(L.LightningModule):
         else:
             epoch_metrics = self.test_epoch_metrics
             step_metrics = self.test_step_metrics
-        
+
+        if mode == 'test':
+            preds, indices = zip(*self.test_preds_tentative)
+            torch.save(preds,f'{self.hparams.logdir}/preds.pt')
+            torch.save(indices,f'{self.hparams.logdir}/indices.pt')
+
         self.log_dict(epoch_metrics.compute(), prog_bar=True, sync_dist=True)
         self.prc.compute()
 
