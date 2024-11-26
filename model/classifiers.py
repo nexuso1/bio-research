@@ -80,8 +80,9 @@ class EncoderClassifier(TokenClassifier):
             )
 
         # Create a residual MLP classifier
-        self.classifier = ResidualMLP([self.config.hidden_size, self.config.hidden_size, self.config.hidden_size, 1], input_size=config.sr_dim, activation=torch.nn.ReLU(), 
-                                  norm=torch.nn.LayerNorm)
+        self.classifier = ResidualMLP([self.config.hidden_size, self.config.hidden_size, self.config.hidden_size, 1],
+                                       input_size=config.sr_dim, activation=torch.nn.ReLU(), norm=torch.nn.LayerNorm,
+                                       dropout=config.dropout_rate)
 
         # Initialize the modules
         for module in self.modules():

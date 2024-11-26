@@ -11,6 +11,7 @@ class TokenClassifierConfig:
     loss : Callable[[torch.Tensor], torch.Tensor]
     lora_config : lora.MultiPurposeLoRAConfig | None = None
     apply_lora : bool = False
+    dropout_rate : float = 0
     base_type : str = '650M' # Type of the ESM base model, currently (650M, 13B, 35M)
 
 class TokenClassifier(nn.Module):
