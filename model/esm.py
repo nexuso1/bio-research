@@ -39,7 +39,7 @@ parser.add_argument('--ft_only', action='store_true', help='Skip pre-training, o
 parser.add_argument('--weight_decay', type=float, help='Weight decay', default=1e-4)
 parser.add_argument('--accum', type=int, help='Number of gradient accumulation steps', default=3)
 parser.add_argument('--val_batch', type=int, help='Validation batch size', default=10)
-parser.add_argument('--hidden_size', type=int, help='Classifier hidden size', default=256)
+parser.add_argument('--hidden_size', type=int, help='Classifier hidden size', default=128)
 parser.add_argument('--lr', type=float, help='Learning rate', default=3e-4)
 parser.add_argument('-o', type=str, help='Output folder', default=None)
 parser.add_argument('-n', type=str, help='Model name', default='esm')
