@@ -85,8 +85,6 @@ class LightningWrapper(L.LightningModule):
 
         if mode == 'test':
             preds, indices = zip(*self.test_preds)
-            preds = torch.cat(preds)
-            indices = torch.cat(indices)
             torch.save(preds,f'{self.hparams.logdir}/preds.pt')
             torch.save(indices,f'{self.hparams.logdir}/indices.pt')
 
