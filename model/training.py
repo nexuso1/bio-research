@@ -241,11 +241,11 @@ def run_training(args, create_model_fn):
         monitor_metric = 'test_f1'
         monitor_best_val = 0
 
-        if len(test_metrics.keys()) == 0:
+        if len(metric_hist.keys()) == 0:
             metric_hist = test_metrics
         
         print(f'Test metric averages after epoch {i}')
-        for metric in metric_hist:
+        for metric in metric_hist[0]:
             metric_hist[metric] += test_metrics[metric]
             print(f'{metric}: {metric_hist[metric_hist] / i}')
 
