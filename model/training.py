@@ -242,14 +242,14 @@ def run_training(args, create_model_fn):
         monitor_best_val = 0
 
         if len(metric_hist.keys()) == 0:
-            metric_hist = test_metrics
+            metric_hist = test_metrics[0]
         
         print(f'Test metric averages after epoch {i}')
-        for metric in metric_hist[0]:
-            metric_hist[metric] += test_metrics[metric]
+        for metric in metric_hist:
+            metric_hist[metric] += test_metrics[0][metric]
             print(f'{metric}: {metric_hist[metric_hist] / i}')
 
-        if monitor_best_val > test_metrics[monitor_metric]:
-            monitor_best_val = test_metrics[monitor_metric]
+        if monitor_best_val > test_metrics[0][monitor_metric]:
+            monitor_best_val = test_metrics[0][monitor_metric]
             save_model(args, model, args.n)
     return model
