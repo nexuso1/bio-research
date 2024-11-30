@@ -206,22 +206,23 @@ def run_training(args, create_model_fn):
     meta = Metadata()
     meta.data = {'args' : args }
     meta.save(args.logdir)
-    test = DataLoader(full_dataset.test_ds, args.batch_size, shuffle=False, 
-                      collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=args.ignore_label),
-                      persistent_workers=True if args.num_workers > 0 else False,
-                      num_workers=args.num_workers)
     
     master_logdir = args.logdir
     metric_hist = {}
     for i in range(full_dataset.n_splits):
         args.logdir = os.path.join(master_logdir, f'fold_{i}')
-        train_ds, dev_ds = full_dataset.get_fold(i)
+        train_ds, dev_ds, test_ds = full_dataset.get_fold(i)
         
         train = DataLoader(train_ds, args.batch_size, shuffle=True,
                             collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=args.ignore_label),
                             persistent_workers=True if args.num_workers > 0 else False, 
                             num_workers=args.num_workers )
         dev = DataLoader(dev_ds, args.batch_size, shuffle=False,
+                            collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=args.ignore_label),
+                            persistent_workers=True if args.num_workers > 0 else False,
+                            num_workers=args.num_workers)
+        
+        test = DataLoader(test_ds, args.batch_size, shuffle=False,
                             collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=args.ignore_label),
                             persistent_workers=True if args.num_workers > 0 else False,
                             num_workers=args.num_workers)
@@ -247,7 +248,7 @@ def run_training(args, create_model_fn):
         print(f'Test metric averages after epoch {i}')
         for metric in metric_hist:
             metric_hist[metric] += test_metrics[0][metric]
-            print(f'{metric}: {metric_hist[metric_hist] / i}')
+            print(f'{metric}: {metric_hist[metric] / (i + 1)}')
 
         if monitor_best_val > test_metrics[0][monitor_metric]:
             monitor_best_val = test_metrics[0][monitor_metric]

@@ -12,7 +12,7 @@ def create_model(args):
                                      sr_cnn_layers=sr_cnn_layers)
     
     classifier = EncoderClassifier(conf, base)
-
+ 
     if not args.lora:
         classifier.set_base_requires_grad(False)
 

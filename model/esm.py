@@ -33,7 +33,7 @@ parser.add_argument('--max_length', type=int, help='Maximum sequence length (sho
 parser.add_argument('--prot_info_path', type=str, 
                      help='Path to the protein dataset. Expects a dataframe with columns ("id", "sequence", "sites"). "sequence" is the protein AA string, "sites" is a list of phosphorylation sites.',
                      default='../data/phosphosite_sequences/phosphosite_df.json')
-parser.add_argument('--dataset_path', type=str, help='Path to the prepared dataset, with information about train, test sets; and folds.', default='../data/prepared_dataset.json')
+parser.add_argument('--dataset_path', type=str, help='Path to the prepared dataset, with information about train, test sets; and folds.', default='../data/splits_S.json')
 parser.add_argument('--fine_tune', action='store_true', help='Use fine tuning on the base model or not. Default is False', default=False)
 parser.add_argument('--ft_only', action='store_true', help='Skip pre-training, only fine-tune', default=False)
 parser.add_argument('--weight_decay', type=float, help='Weight decay', default=1e-4)

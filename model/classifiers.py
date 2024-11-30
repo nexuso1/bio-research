@@ -236,18 +236,20 @@ class SelectiveFinetuningClassifier(TokenClassifier):
             for param in param_list[i][1].parameters():
                 param.requires_grad = req_grad_value
 
-class DummyRNNTokenClassifier(TokenClassifier):
+class DummyClassifier(TokenClassifier):
     def __init__(self, config: RNNTokenClassiferConfig, base_model) -> None:
         super().__init__(config, base_model)
-        print(self.device)
+        self.linear = torch.nn.Linear(1, 1) # So that the parameter list for optim isn't empty
 
     def forward(self, input_ids, attention_mask, batch_lens, **kwargs):
-        return torch.zeros_like(input_ids)
+        return torch.zeros_like(input_ids, device=self.device).float()
     
     def predict(self, input_ids, attention_mask=None, return_dict=False, labels=None, **kwargs) -> torch.Tensor:
+        preds = self.linear(input_ids.float().unsqueeze(-1))
+        preds = preds - preds
         if labels is not None:
-            return torch.Tensor([0], device=self.device), torch.zeros_like(input_ids, device=self.device)
-        return torch.zeros_like(input_ids, device=self.device)
+            return self.loss(preds.squeeze(), labels), preds
+        return preds
     
     def train_predict(self, input_ids: torch.Tensor, labels: torch.Tensor, attention_mask: torch.Tensor = None, return_dict=False, **kwargs):
-        self.predict(input_ids, attention_mask, return_dict, labels, kwargs)
+        return self.predict(input_ids, attention_mask, return_dict, labels, **kwargs)
