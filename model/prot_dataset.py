@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 
+from sklearn.model_selection import train_test_split
 from torch.utils.data.dataset import Dataset
 
 class ProteinDataset(Dataset):
@@ -11,15 +12,14 @@ class ProteinDataset(Dataset):
         return self.data.shape[0]
     
     def __getitem__(self, index : int):
-        row = self.data.loc[index]
+        row = self.data.iloc[index]
         return index, row.sequence, row.label
     
 class FullProteinDataset:
-    def __init__(self, prot_info : pd.DataFrame, split_info : dict, tokenizer=None, pre_tokenize=False):
+    def __init__(self, prot_info : pd.DataFrame, splits : dict, tokenizer=None, pre_tokenize=False):
         self.prot_info = prot_info
-        self.split_info = split_info
-        self.n_splits = len(split_info['splits'])
-        self.create_datasets()
+        self.split_info = splits
+        self.n_splits = len(splits)
 
         if pre_tokenize:
             if self.tokenizer is not None:
@@ -31,26 +31,19 @@ class FullProteinDataset:
     def tokenize_datasets(self):
         ...
 
-    def create_datasets(self):
-        reindexed = self.prot_info.set_index('id')
-        test = reindexed.loc[self.split_info['test']]
-        train = reindexed.loc[self.split_info['train']]
-        self.train_df = train
-        self.test_ds = ProteinDataset(test.reset_index(level='id'))
-
-        print(f'Test size: {len(self.test_ds)}')
-        print(f'Average fold train size: {sum([len(self.split_info["splits"][i]["train"]) for i in range(self.n_splits)]) / self.n_splits}')
-        print(f'Average fold dev size: {sum([len(self.split_info["splits"][i]["dev"]) for i in range(self.n_splits)]) / self.n_splits}')
-    
     def get_fold(self, i):
-        train_prots = np.array(self.split_info['train'])
-        split = self.split_info['splits'][i]
-        train_indices = split['train']
-        dev_indices = split['dev']
-        split_train, split_dev = train_prots[train_indices], train_prots[dev_indices]
+        test = self.prot_info.loc[self.split_info[i]['test']]
+        train = self.prot_info.loc[self.split_info[i]['train']]
+        test_ds = ProteinDataset(test)
+        train, dev = train_test_split(train, train_size=0.8, random_state=42)
+        train_ds = ProteinDataset(train)
+        dev_ds = ProteinDataset(dev)
 
-        return ProteinDataset(self.train_df.loc[split_train].reset_index(level='id')), \
-               ProteinDataset(self.train_df.loc[split_dev].reset_index(level='id'))
+        print(f'Train size: {len(train_ds)}')
+        print(f'Dev size: {len(dev_ds)}')
+        print(f'Test size: {len(test_ds)}')
+
+        return train_ds, dev_ds, test_ds
         
 class PhosphoLingoDataset(Dataset):
     def __init__(self, data : list[dict]) -> None:
