@@ -18,7 +18,7 @@ from esm import save_model, device
 from lightning.pytorch.loggers import TensorBoardLogger
 from data_loading import prepare_datasets
 from transformers import AutoTokenizer
-from argparse import Namespace
+from pathlib import Path
 
 class LightningWrapper(L.LightningModule):
     def __init__(self, args, module : TokenClassifier, epoch_metrics : torchmetrics.MetricCollection,
@@ -205,15 +205,15 @@ def run_training(args, create_model_fn):
         'mcc' : torchmetrics.MatthewsCorrCoef('binary', ignore_index=args.ignore_label)
     })
 
-    # Create metadata
-    meta = Metadata()
-    meta.data = {'args' : args }
-    meta.save(args.logdir)
-    
+    if not args.checkpoint_path:
+        # Create metadata
+        meta = Metadata()
+        meta.data = {'args' : args }
+        meta.save(args.logdir)
+        
     master_logdir = args.logdir
     metric_hist = {}
     for i in range(full_dataset.n_splits):
-        args.logdir = os.path.join(master_logdir, f'fold_{i}')
         train_ds, dev_ds, test_ds = full_dataset.get_fold(i)
         
         train = DataLoader(train_ds, args.batch_size, shuffle=True,
@@ -229,9 +229,15 @@ def run_training(args, create_model_fn):
                             collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=args.ignore_label),
                             persistent_workers=True if args.num_workers > 0 else False,
                             num_workers=args.num_workers)
-        
         args, model, tokenizer = prepare_model(args, create_model_fn, epoch_metrics=epoch_metrics, step_metrics=step_metrics, ds_size=len(train))
-        print(args.logdir)
+
+        par_dir = Path(args.logdir).parent
+        if par_dir != master_logdir:
+            # We have loaded a checkpoint from an existing dir
+            master_logdir = par_dir
+            print(f'Current master logdir: {master_logdir}')
+
+        args.logdir = os.path.join(master_logdir, f'fold_{i}')
         if not isinstance(model, LightningWrapper):
             model = LightningWrapper(args, model, step_metrics=step_metrics, epoch_metrics=epoch_metrics, ds_size=len(train))
 
