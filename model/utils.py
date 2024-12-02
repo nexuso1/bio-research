@@ -8,6 +8,8 @@ from itertools import chain
 from Bio import SeqIO
 from datasets import Dataset
 
+
+
 def load_torch_model(path):
     import torch
     with open(path, 'rb') as f:
@@ -154,3 +156,9 @@ class Metadata:
         os.makedirs(dir, exist_ok=True)
         with open(os.path.join(dir, 'metadata.json'), 'w') as f:
             json.dump(self.to_json(), f)
+
+class SimpleNamespace():
+    def __init__(self, **kwargs) -> None:
+        if len(kwargs.keys()) > 0:
+            for k, v in kwargs.items():
+                self.__setattr__(k, v)

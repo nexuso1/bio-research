@@ -13,11 +13,12 @@ from torchvision.transforms import ToTensor
 from PIL import Image
 from token_classifier_base import TokenClassifier
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
-from utils import Metadata
+from utils import Metadata, SimpleNamespace
 from esm import save_model, device
 from lightning.pytorch.loggers import TensorBoardLogger
 from data_loading import prepare_datasets
 from transformers import AutoTokenizer
+from argparse import Namespace
 
 class LightningWrapper(L.LightningModule):
     def __init__(self, args, module : TokenClassifier, epoch_metrics : torchmetrics.MetricCollection,
@@ -133,7 +134,7 @@ class LightningWrapper(L.LightningModule):
 def train_model(args, train, dev, test, model):
     logger = TensorBoardLogger(args.logdir, name=f'tb_log')
     chkpt_callback = ModelCheckpoint(args.logdir, filename='chkpt', monitor='val_f1')
-    es_callback = EarlyStopping('val_loss', patience=20)
+    es_callback = EarlyStopping('val_loss', patience=args.patience)
 
     # Use deepspeed 
     if torch.cuda.device_count() > 0:
@@ -148,10 +149,12 @@ def train_model(args, train, dev, test, model):
 
     return model, test_metrics
 
-def load_from_checkpoint(checkpoint_path, create_model_fn):
+def load_from_checkpoint(checkpoint_path, create_model_fn, **kwargs):
     chkpt = torch.load(checkpoint_path)
-    model = create_model_fn(chkpt['hyper_parameters'])
-    return LightningWrapper.load_from_checkpoint(chkpt, module=model)
+    args = SimpleNamespace(**chkpt['hyper_parameters'])
+    module, tokenizer = create_model_fn(args)
+    chkpt = LightningWrapper.load_from_checkpoint(checkpoint_path, module=module, **kwargs)
+    return args, chkpt, tokenizer
 
 def get_tokenizer(args):
     if args.type == '3B' :
@@ -165,9 +168,9 @@ def get_tokenizer(args):
 
     return tokenizer
 
-def prepare_model(args, create_model_fn):
+def prepare_model(args, create_model_fn, **kwargs):
     if args.checkpoint_path is not None:
-        model, tokenizer, args = load_from_checkpoint(args.checkpoint_path, create_model_fn)
+        args, model, tokenizer = load_from_checkpoint(args.checkpoint_path, create_model_fn, **kwargs)
     else:
         model, tokenizer = create_model_fn(args)
 
@@ -227,8 +230,10 @@ def run_training(args, create_model_fn):
                             persistent_workers=True if args.num_workers > 0 else False,
                             num_workers=args.num_workers)
         
-        model, tokenizer = prepare_model(args, create_model_fn)
-        model = LightningWrapper(args, model, step_metrics=step_metrics, epoch_metrics=epoch_metrics, ds_size=len(train))
+        model, tokenizer = prepare_model(args, create_model_fn, epoch_metrics=epoch_metrics, step_metrics=step_metrics, ds_size=len(train))
+        print(args.logdir)
+        if not isinstance(model, LightningWrapper):
+            model = LightningWrapper(args, model, step_metrics=step_metrics, epoch_metrics=epoch_metrics, ds_size=len(train))
 
         if args.compile:
             # Compile the model, useful in general on Ampere architectures and further
