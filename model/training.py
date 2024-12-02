@@ -174,7 +174,7 @@ def prepare_model(args, create_model_fn, **kwargs):
     else:
         model, tokenizer = create_model_fn(args)
 
-    return model, tokenizer
+    return args, model, tokenizer
 
 def run_training(args, create_model_fn):
     L.seed_everything(args.seed)
@@ -230,7 +230,7 @@ def run_training(args, create_model_fn):
                             persistent_workers=True if args.num_workers > 0 else False,
                             num_workers=args.num_workers)
         
-        model, tokenizer = prepare_model(args, create_model_fn, epoch_metrics=epoch_metrics, step_metrics=step_metrics, ds_size=len(train))
+        args, model, tokenizer = prepare_model(args, create_model_fn, epoch_metrics=epoch_metrics, step_metrics=step_metrics, ds_size=len(train))
         print(args.logdir)
         if not isinstance(model, LightningWrapper):
             model = LightningWrapper(args, model, step_metrics=step_metrics, epoch_metrics=epoch_metrics, ds_size=len(train))
