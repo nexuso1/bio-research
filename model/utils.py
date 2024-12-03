@@ -135,9 +135,18 @@ class ProteinDataset(Dataset):
     def __len__(self):
         return self.x.shape[0]
 
-class Metadata:
-    def __init__(self) -> None:
-        self.data = {}
+
+class SimpleNamespace:
+    def __init__(self, **kwargs) -> None:
+        if len(kwargs.keys()) > 0:
+            for k, v in kwargs.items():
+                self.__setattr__(k, v)
+
+class Metadata(SimpleNamespace):
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        if "data" not in self.__dict__.keys():
+            self.data = {}
 
     def jsonify_fn(self, obj):
         if isinstance(obj, np.ndarray):
@@ -156,9 +165,3 @@ class Metadata:
         os.makedirs(dir, exist_ok=True)
         with open(os.path.join(dir, 'metadata.json'), 'w') as f:
             json.dump(self.to_json(), f)
-
-class SimpleNamespace():
-    def __init__(self, **kwargs) -> None:
-        if len(kwargs.keys()) > 0:
-            for k, v in kwargs.items():
-                self.__setattr__(k, v)
