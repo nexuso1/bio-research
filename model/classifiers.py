@@ -27,9 +27,9 @@ class EncoderClassifierConfig(TokenClassifierConfig):
     pos_embed_type : str = 'sin'
     sr_cnn_layers : list[ConvLayerConfig] = field(default_factory= lambda :[
             ConvLayerConfig(1280, 256, 5, 2, 2),
-            ConvLayerConfig(256, 256, 5, 2, 2),
-            ConvLayerConfig(256, 256, 5, 2, 2),
-            ConvLayerConfig(256, 256, 5, 2, 2),
+            ConvLayerConfig(256, 378, 5, 2, 2),
+            ConvLayerConfig(378, 512, 5, 2, 2),
+            ConvLayerConfig(512, 1024, 5, 2, 2),
             # ConvLayerConfig(1024, 768, 3, 2, 2),
             # ConvLayerConfig(768, 512, 3, 2, 2),
             # ConvLayerConfig(512, 384, 3, 2, 2),
@@ -69,8 +69,8 @@ class EncoderClassifier(TokenClassifier):
         self.encoder = torch.nn.TransformerEncoder(enc_layer, config.n_layers)
 
         # Create sequence-representation and residue-representation CNNs
-        self.sr_cnn = Conv1dModel(config.sr_cnn_layers, config.sr_cnn_layers[-1].out_channels)
-        self.res_cnn = Conv1dModel(config.res_cnn_layers, config.sr_cnn_layers[-1].out_channels, False)
+        self.sr_cnn = Conv1dModel(config.sr_cnn_layers, config.sr_cnn_layers[-1].out_channels, self.config.dropout_rate)
+        self.res_cnn = Conv1dModel(config.res_cnn_layers, config.sr_cnn_layers[-1].out_channels, False, self.config.dropout_rate)
 
         # Create the FFN parts of these representations
         self.seq_rep = torch.nn.Sequential(
@@ -81,7 +81,7 @@ class EncoderClassifier(TokenClassifier):
             )
 
         # Create a residual MLP classifier
-        self.classifier = ResidualMLP([self.config.hidden_size, self.config.hidden_size, self.config.hidden_size, 1],
+        self.classifier = ResidualMLP(self.config.mlp_layers,
                                        input_size=config.sr_dim, activation=torch.nn.ReLU(), norm=torch.nn.LayerNorm,
                                        dropout=config.dropout_rate)
 
