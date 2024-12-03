@@ -23,9 +23,9 @@ def main(args):
 
 if __name__ == '__main__':
     parser.add_argument('--n_layers_mlp', type=int, help='Number of MLP classifier layers', default=3)
-    parser.add_argument('--block_size', type=int, help='Number of seq. rep. CNN layers in one block', default=3)
+    parser.add_argument('--block_size', type=int, help='Number of seq. rep. CNN layers in one block', default=2)
     parser.add_argument('--n_blocks', type=int, help='Number of seq. rep. CNN blocks', default=3)
-    parser.add_argument('--sr_kernel_size', type=int, help='Seq. rep. kernel size')
+    parser.add_argument('--sr_kernel_size', type=int, help='Seq. rep. kernel size', default=5)
     parser.add_argument('--encoder_dim', type=int, help='Classifier encoder dimension', default=256)
     args = parser.parse_args()
     main(args)
