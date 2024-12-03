@@ -208,7 +208,7 @@ def run_training(args, create_model_fn):
     else:
         par_dir = Path(args.checkpoint_path).parent
         with open(f'{par_dir.parent}/metadata.json', 'r') as f:
-            meta = Metadata(json.loads(f.read()))
+            meta = Metadata(**json.loads(f.read()))
             current_fold = meta.data['current_fold'] if 'current_fold' in meta.data else eval(par_dir.name[-10])
             args.logdir = meta.data['logdir']
 
