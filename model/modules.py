@@ -82,8 +82,8 @@ class Up1D(torch.nn.Module):
 class Down1D(torch.nn.Module):
     def __init__(self, in_channels, out_channels, num_layers=3, kernel_size=3, stride=2, dropout=0) -> None:
         super().__init__()
-        self.down = ConvNormActiv1D(in_channels, out_channels, kernel_size=3, stride=stride,
-                                    padding=1)
+        self.down = ConvNormActiv1D(in_channels, out_channels, kernel_size=kernel_size, stride=stride,
+                                    padding=(kernel_size - 1) // 2)
         self.layers = []
         for _ in range(num_layers-1):
             self.layers.append(ConvNormActiv1D(out_channels, out_channels, kernel_size=kernel_size, padding=(kernel_size - 1) // 2, stride=1))
