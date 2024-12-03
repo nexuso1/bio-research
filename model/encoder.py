@@ -7,7 +7,7 @@ def create_model(args):
     base, tokenizer = get_esm(args.type)
     mlp_layers = [args.hidden_size for _ in range(args.n_layers_mlp)] + [1]
     sr_sizes = 2 ** np.linspace(np.log2(args.sr_init_size), np.log2(args.sr_final_size), args.sr_n)
-    sr_cnn_layers = [ConvLayerConfig(base.config.hidden_size, sr_sizes[0], args.sr_kernel_size, args.block_size, 2)]
+    sr_cnn_layers = [ConvLayerConfig(base.config.hidden_size, int(sr_sizes[0]), args.sr_kernel_size, args.block_size, 2)]
     sr_cnn_layers = sr_cnn_layers + [ConvLayerConfig(int(sr_sizes[i]), int(sr_sizes[i+1]), args.sr_kernel_size, args.block_size, 2) for i in range(args.sr_n - 1)]
     print(sr_cnn_layers)
     conf = EncoderClassifierConfig(1, loss = create_loss(args), mlp_layers=mlp_layers,
