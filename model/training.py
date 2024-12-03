@@ -5,6 +5,7 @@ import os.path
 import datetime
 import matplotlib.pyplot as plt
 import io
+import json
 
 from torch.utils.data import DataLoader
 from data_loading import prep_batch
@@ -131,9 +132,9 @@ class LightningWrapper(L.LightningModule):
             "frequency" : 1
         }}
     
-def train_model(args, train, dev, test, model):
-    logger = TensorBoardLogger(args.logdir, name=f'tb_log')
-    chkpt_callback = ModelCheckpoint(args.logdir, filename='chkpt', monitor='val_f1')
+def train_model(args, train, dev, test, model, logdir):
+    logger = TensorBoardLogger(logdir, name=f'tb_log')
+    chkpt_callback = ModelCheckpoint(logdir, filename='chkpt', monitor='val_f1')
     es_callback = EarlyStopping('val_loss', patience=args.patience)
 
     # Use deepspeed 
@@ -143,18 +144,11 @@ def train_model(args, train, dev, test, model):
         strategy = "auto"
     trainer = L.Trainer(logger=logger, callbacks=[chkpt_callback, es_callback], max_epochs=args.epochs,
                         deterministic=True, log_every_n_steps=1,  accumulate_grad_batches=args.accum, strategy=strategy)
-    trainer.fit(model, train, dev)
+    trainer.fit(model, train, dev, ckpt_path=args.checkpoint_path)
     test_metrics = trainer.test(model, test)
     print(test_metrics)
 
     return model, test_metrics
-
-def load_from_checkpoint(checkpoint_path, create_model_fn, **kwargs):
-    chkpt = torch.load(checkpoint_path)
-    args = SimpleNamespace(**chkpt['hyper_parameters'])
-    module, tokenizer = create_model_fn(args)
-    chkpt = LightningWrapper.load_from_checkpoint(checkpoint_path, module=module, **kwargs)
-    return args, chkpt, tokenizer
 
 def get_tokenizer(args):
     if args.type == '3B' :
@@ -170,7 +164,8 @@ def get_tokenizer(args):
 
 def prepare_model(args, create_model_fn, **kwargs):
     if args.checkpoint_path is not None:
-        args, model, tokenizer = load_from_checkpoint(args.checkpoint_path, create_model_fn, **kwargs)
+        # args, model, tokenizer = load_from_checkpoint(args.checkpoint_path, create_model_fn, **kwargs)
+        pass
     else:
         model, tokenizer = create_model_fn(args)
 
@@ -210,10 +205,19 @@ def run_training(args, create_model_fn):
         meta = Metadata()
         meta.data = {'args' : args }
         meta.save(args.logdir)
-        
+    else:
+        par_dir = Path(args.checkpoint_path).parent
+        with open(f'{par_dir.parent}/metadata.json', 'r') as f:
+            meta = Metadata(json.loads(f.read()))
+            current_fold = meta.data['current_fold'] if 'current_fold' in meta.data else eval(par_dir.name[-10])
+            args.logdir = meta.data['logdir']
+
     master_logdir = args.logdir
     metric_hist = {}
-    for i in range(full_dataset.n_splits):
+    for i in range(current_fold, full_dataset.n_splits):
+        meta.current_fold = i
+        meta.save(master_logdir)
+
         train_ds, dev_ds, test_ds = full_dataset.get_fold(i)
         
         train = DataLoader(train_ds, args.batch_size, shuffle=True,
@@ -229,15 +233,10 @@ def run_training(args, create_model_fn):
                             collate_fn=partial(prep_batch, tokenizer=tokenizer, ignore_label=args.ignore_label),
                             persistent_workers=True if args.num_workers > 0 else False,
                             num_workers=args.num_workers)
-        args, model, tokenizer = prepare_model(args, create_model_fn, epoch_metrics=epoch_metrics, step_metrics=step_metrics, ds_size=len(train))
+        
+        model, tokenizer = prepare_model(args, create_model_fn, epoch_metrics=epoch_metrics, step_metrics=step_metrics, ds_size=len(train))
 
-        par_dir = Path(args.logdir).parent
-        if par_dir != master_logdir:
-            # We have loaded a checkpoint from an existing dir
-            master_logdir = par_dir
-            print(f'Current master logdir: {master_logdir}')
-
-        args.logdir = os.path.join(master_logdir, f'fold_{i}')
+        logdir = os.path.join(master_logdir, f'fold_{i}')
         if not isinstance(model, LightningWrapper):
             model = LightningWrapper(args, model, step_metrics=step_metrics, epoch_metrics=epoch_metrics, ds_size=len(train))
 
@@ -249,7 +248,7 @@ def run_training(args, create_model_fn):
         else:
             training_model = model.to(device)
     
-        training_model, test_metrics = train_model(args, train, dev, test, training_model)
+        training_model, test_metrics = train_model(args, train, dev, test, training_model, logdir)
         monitor_metric = 'test_f1'
         monitor_best_val = 0
 
@@ -260,6 +259,7 @@ def run_training(args, create_model_fn):
         for metric in metric_hist:
             metric_hist[metric] += test_metrics[0][metric]
             print(f'{metric}: {metric_hist[metric] / (i + 1)}')
+            print()
 
         if monitor_best_val > test_metrics[0][monitor_metric]:
             monitor_best_val = test_metrics[0][monitor_metric]
