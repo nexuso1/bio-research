@@ -212,7 +212,7 @@ def run_training(args : Namespace, create_model_fn):
         with open(f'{par_dir.parent}/metadata.json', 'r') as f:
             meta = Metadata(**json.load(f))
             if 'current_fold' not in meta.data:
-                meta.data['current_fold'] = 0
+                meta.data['current_fold'] = int(par_dir.name[-1])
             for k, v in meta.data['args'].items():
                 args.__setattr__(k, v)
 
