@@ -153,15 +153,8 @@ class Metadata(SimpleNamespace):
             return obj.tolist()
         
         return obj.__dict__
-
-    def to_json(self):
-        return json.dumps(
-            self,
-            default=self.jsonify_fn, 
-            sort_keys=True,
-            indent=4)
     
     def save(self, dir : str):
         os.makedirs(dir, exist_ok=True)
         with open(os.path.join(dir, 'metadata.json'), 'w') as f:
-            json.dump(self.to_json(), f)
+            json.dump(self,f, default=self.jsonify_fn,  sort_keys=True, indent=4 )

@@ -20,6 +20,7 @@ from lightning.pytorch.loggers import TensorBoardLogger
 from data_loading import prepare_datasets
 from transformers import AutoTokenizer
 from pathlib import Path
+from argparse import Namespace
 
 class LightningWrapper(L.LightningModule):
     def __init__(self, args, module : TokenClassifier, epoch_metrics : torchmetrics.MetricCollection,
@@ -169,9 +170,9 @@ def prepare_model(args, create_model_fn, **kwargs):
     else:
         model, tokenizer = create_model_fn(args)
 
-    return args, model, tokenizer
+    return model, tokenizer
 
-def run_training(args, create_model_fn):
+def run_training(args : Namespace, create_model_fn):
     L.seed_everything(args.seed)
 
     log_dirname = args.o if args.o else "{}_{}".format(
@@ -204,18 +205,21 @@ def run_training(args, create_model_fn):
         # Create metadata
         meta = Metadata()
         meta.data = {'args' : args }
+        meta.data['current_fold'] = 0
         meta.save(args.logdir)
     else:
         par_dir = Path(args.checkpoint_path).parent
         with open(f'{par_dir.parent}/metadata.json', 'r') as f:
-            meta = Metadata(**json.loads(f.read()))
-            current_fold = meta.data['current_fold'] if 'current_fold' in meta.data else eval(par_dir.name[-10])
-            args.logdir = meta.data['logdir']
+            meta = Metadata(**json.load(f))
+            if 'current_fold' not in meta.data:
+                meta.data['current_fold'] = 0
+            for k, v in meta.data['args'].items():
+                args.__setattr__(k, v)
 
     master_logdir = args.logdir
     metric_hist = {}
-    for i in range(current_fold, full_dataset.n_splits):
-        meta.current_fold = i
+    for i in range(meta.data['current_fold'], full_dataset.n_splits):
+        meta.data['current_fold'] = i
         meta.save(master_logdir)
 
         train_ds, dev_ds, test_ds = full_dataset.get_fold(i)
