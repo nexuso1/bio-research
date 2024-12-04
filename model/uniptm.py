@@ -6,9 +6,7 @@ def create_model(args):
     conf = TokenClassifierConfig(1, loss = create_loss(args)) # ignored
     base, tokenizer = get_esm(conf.base_type)
     classifier = UniPTM(conf, base, 1280, 8, 1, 128, 0.5, 3)
-
-    if not args.lora:
-        classifier.set_base_requires_grad(False)
+    classifier.set_base_requires_grad(False)
 
     return classifier, tokenizer
 

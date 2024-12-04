@@ -136,7 +136,7 @@ class LightningWrapper(L.LightningModule):
 def train_model(args, train, dev, test, model, logdir):
     logger = TensorBoardLogger(logdir, name=f'tb_log')
     chkpt_callback = ModelCheckpoint(logdir, filename='chkpt', monitor='val_f1')
-    es_callback = EarlyStopping('val_loss', patience=args.patience)
+    es_callback = EarlyStopping('val_f1', patience=args.patience)
 
     # Use deepspeed 
     if torch.cuda.device_count() > 0:
@@ -146,7 +146,7 @@ def train_model(args, train, dev, test, model, logdir):
     trainer = L.Trainer(logger=logger, callbacks=[chkpt_callback, es_callback], max_epochs=args.epochs,
                         deterministic=True, log_every_n_steps=1,  accumulate_grad_batches=args.accum, strategy=strategy)
     trainer.fit(model, train, dev, ckpt_path=args.checkpoint_path)
-    test_metrics = trainer.test(model, test)
+    test_metrics = trainer.test(model, test, logger=logger)
     print(test_metrics)
 
     return model, test_metrics
