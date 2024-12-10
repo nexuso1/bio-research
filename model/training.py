@@ -15,7 +15,7 @@ from PIL import Image
 from token_classifier_base import TokenClassifier
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from utils import Metadata, SimpleNamespace
-from esm import save_model, device
+from esm_train import save_model, device
 from lightning.pytorch.loggers import TensorBoardLogger
 from data_loading import prepare_datasets
 from transformers import AutoTokenizer

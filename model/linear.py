@@ -1,4 +1,4 @@
-from esm import get_esm, parser, create_loss
+from esm_train import get_esm, parser, create_loss
 from classifiers import LinearClassifier, TokenClassifierConfig
 from training import run_training
 
@@ -16,6 +16,5 @@ def main(args):
     run_training(args, create_model)
 
 if __name__ == '__main__':
-    # parser.add_argument('--focal_loss', action='store_true', default=False, help='Use focal loss')
     args = parser.parse_args()
     main(args)

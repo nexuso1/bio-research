@@ -1,6 +1,6 @@
 from classifiers import EncoderClassifier, EncoderClassifierConfig, ConvLayerConfig
 from training import run_training
-from esm import parser, get_esm, create_loss
+from esm_train import parser, get_esm, create_loss
 import numpy as np
 
 def create_model(args):
@@ -9,7 +9,6 @@ def create_model(args):
     sr_sizes = 2 ** np.linspace(np.log2(args.sr_init_size), np.log2(args.sr_final_size), args.sr_n)
     sr_cnn_layers = [ConvLayerConfig(base.config.hidden_size, int(sr_sizes[0]), args.sr_kernel_size, args.block_size, 2)]
     sr_cnn_layers = sr_cnn_layers + [ConvLayerConfig(int(sr_sizes[i]), int(sr_sizes[i+1]), args.sr_kernel_size, args.block_size, 2) for i in range(args.sr_n - 1)]
-    print(sr_cnn_layers)
     conf = EncoderClassifierConfig(1, loss = create_loss(args), mlp_layers=mlp_layers,
                                    n_layers=args.n_layers, dropout_rate=args.dropout,
                                      sr_cnn_layers=sr_cnn_layers)

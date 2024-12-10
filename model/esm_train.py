@@ -15,13 +15,12 @@ import lora
 from functools import partial
 from dataclasses import dataclass
 from tqdm.auto import tqdm
-from utils import Metadata, load_torch_model
+from utils import Metadata, load_torch_model, sigmoid_focal_loss
 from data_loading import prepare_datasets
 from datasets import Dataset
 from transformers import set_seed, EsmModel, AutoTokenizer
 from token_classifier_base import TokenClassifier, TokenClassifierConfig
 from classifiers import RNNTokenClassifier, RNNTokenClassiferConfig
-from torchvision.ops import sigmoid_focal_loss
 
 
 parser = argparse.ArgumentParser()
