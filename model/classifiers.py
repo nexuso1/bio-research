@@ -2,8 +2,9 @@ from torch.nn.modules import Module
 from token_classifier_base import TokenClassifier, TokenClassifierConfig
 from modules import RNNClassifier
 from dataclasses import dataclass, field
-from modules import Conv1dModel, ConvLayerConfig, SinPositionalEncoding, ResidualMLP
+from modules import Conv1dModel, ConvLayerConfig, SinPositionalEncoding, ResidualMLP, FusedMBConv1dModel, FusedMBConvConfig
 
+import pandas as pd
 import torch
 
 @dataclass
@@ -25,7 +26,8 @@ class EncoderClassifierConfig(TokenClassifierConfig):
     n_layers : int = 1
     sr_dim : int = 256
     pos_embed_type : str = 'sin'
-    sr_cnn_layers : list[ConvLayerConfig] = field(default_factory= lambda :[
+    cnn_type : str = 'basic'
+    sr_cnn_layers : list[ConvLayerConfig|FusedMBConvConfig] = field(default_factory= lambda :[
             ConvLayerConfig(1280, 256, 5, 2, 2),
             ConvLayerConfig(256, 378, 5, 2, 2),
             ConvLayerConfig(378, 512, 5, 2, 2),
@@ -37,9 +39,16 @@ class EncoderClassifierConfig(TokenClassifierConfig):
         ])
     
     res_cnn_layers : list[ConvLayerConfig] = field(default_factory= lambda :[
-            ConvLayerConfig(1280, 256, 31, 4, 1),
+            ConvLayerConfig(1280, 256, 31, 1, 1),
         ])
+    
     mlp_layers : list[int] = field(default_factory=lambda : [256, 256, 256, 1])
+
+
+@dataclass
+class KinaseClassfierConfig(EncoderClassifierConfig):
+    kinase_emb_path : str = ...
+    kinase_info_path : str = ...
 
 @dataclass
 class SelectiveFinetuningClassifierConfig(TokenClassifierConfig):
@@ -68,17 +77,14 @@ class EncoderClassifier(TokenClassifier):
 
         self.encoder = torch.nn.TransformerEncoder(enc_layer, config.n_layers)
 
-        # Create sequence-representation and residue-representation CNNs
-        self.sr_cnn = Conv1dModel(config.sr_cnn_layers, config.sr_cnn_layers[-1].out_channels, self.config.dropout_rate)
-        self.res_cnn = Conv1dModel(config.res_cnn_layers, config.sr_cnn_layers[-1].out_channels, False, self.config.dropout_rate)
-
-        # Create the FFN parts of these representations
-        self.seq_rep = torch.nn.Sequential(
-                torch.nn.Flatten(),
-                torch.nn.LayerNorm(config.sr_cnn_layers[-1].out_channels),
-                torch.nn.Linear(config.sr_cnn_layers[-1].out_channels, config.sr_dim),
-                torch.nn.ReLU()
-            )
+        if config.sr_type == 'cnn':
+            self.create_sr_cnn()
+        
+        # Create the residue representation CNN
+        if config.cnn_type == 'basic':
+            self.res_cnn = Conv1dModel(config.res_cnn_layers, pool=False, dropout=self.config.dropout_rate)
+        elif config.cnn_type == 'fused':
+            self.res_cnn = FusedMBConv1dModel(config.res_cnn_layers, pool=False, dropout=config.dropout_rate)
 
         # Create a residual MLP classifier
         self.classifier = ResidualMLP(self.config.mlp_layers,
@@ -91,15 +97,79 @@ class EncoderClassifier(TokenClassifier):
         
         self.base = base_model
     
+    def create_sr_cnn(self):
+        # Create sequence-representation CNN
+        if self.config.cnn_type == 'basic':
+            self.sr_cnn = Conv1dModel(self.config.sr_cnn_layers, self.config.sr_cnn_layers[-1].out_channels, self.config.dropout_rate, pool=True)
+        elif self.config.cnn_type == 'fused':
+            self.sr_cnn = FusedMBConv1dModel(self.config.sr_cnn_layers, pool=True, dropout=self.config.dropout_rate)
+        
+        # Create the FFN part
+        self.seq_rep = torch.nn.Sequential(
+                self.sr_cnn,
+                torch.nn.Flatten(),
+                torch.nn.LayerNorm(self.config.sr_cnn_layers[-1].out_channels),
+                torch.nn.Linear(self.config.sr_cnn_layers[-1].out_channels, self.config.sr_dim),
+                torch.nn.ReLU()
+            )
+
+    def forward(self, input_ids, attention_mask, **kwargs):
+        base_out = self.base(input_ids=input_ids, attention_mask=attention_mask)
+        x = base_out[0]
+        proj = self.res_cnn(x)
+        seq_rep = self.seq_rep(seq_rep)
+        enc_mask = torch.cat([torch.ones(attention_mask.shape[0], 1, device=self.device), attention_mask], 1)
+        x = torch.cat([seq_rep.unsqueeze(1), proj], axis=1)
+        x = x + self.pos_embed(x)
+        x = self.encoder(x, src_key_padding_mask=torch.bitwise_not(enc_mask.bool()))
+        return self.classifier(x)[:, 1:], base_out
+    
+class KinaseClassifier(EncoderClassifier):
+    def __init__(self, config: KinaseClassfierConfig, base_model: Module) -> None:
+        super().__init__(config, base_model)
+        kinase_embeds = torch.load(config.kinase_emb_path)
+        kinase_info = pd.read_csv(config.kinase_info_path)
+        kinases = [v for k,v in kinase_embeds.items() if k in set(kinase_info['kinase_top1_id'])]
+        self.register_buffer('kinases', self.config.kinases)
+
     def forward(self, input_ids, attention_mask, **kwargs):
         base_out = self.base(input_ids=input_ids, attention_mask=attention_mask)
         x = base_out[0]
         proj = self.res_cnn(x)
         seq_rep = self.sr_cnn(x)
         seq_rep = self.seq_rep(seq_rep)
-        enc_mask = torch.cat([torch.ones(attention_mask.shape[0], 1, device=self.device), attention_mask], 1)
-        x = torch.cat([seq_rep.unsqueeze(1), proj], axis=1)
+        kinase_reps = self.seq_rep(self.kinases)
+        enc_mask = torch.cat([torch.ones(attention_mask.shape[0], 2, device=self.device), attention_mask], 1)
+        x = torch.cat([kinase_reps, seq_rep.unsqueeze(1), proj], axis=1)
         x = x + self.pos_embed(x)
+        # src_key_padding_mask contains True if token i is padding, otherwise False
+        x = self.encoder(x, src_key_padding_mask=torch.bitwise_not(enc_mask.bool()))
+        return self.classifier(x)[:, 1:], base_out
+ 
+class KinaseClassifierB(EncoderClassifier):
+    def __init__(self, config: EncoderClassifierConfig, base_model: Module) -> None:
+        super().__init__(config, base_model)
+        self.register_buffer('kinases', self.config.kinases)
+        self.kinase_gate = torch.nn.Sequential(
+            torch.nn.Linear(self.config.sr_dim, self.config.sr_dim * 4),
+            torch.nn.ReLU(),
+            torch.nn.LayerNorm(config.sr_dim * 4),
+            torch.nn.Linear(config.sr_dim * 4, 1)
+        )
+
+    def forward(self, input_ids, attention_mask, **kwargs):
+        base_out = self.base(input_ids=input_ids, attention_mask=attention_mask)
+        x = base_out[0]
+        proj = self.res_cnn(x)
+        seq_rep = self.sr_cnn(x)
+        seq_rep = self.seq_rep(seq_rep)
+        kinase_reps = self.seq_rep(self.kinases)
+        kinase_mask = torch.nn.Softmax(self.kinase_gate(kinase_reps))
+        kinase_token = kinase_reps * kinase_mask
+        enc_mask = torch.cat([torch.ones(attention_mask.shape[0], 2, device=self.device), attention_mask], 1)
+        x = torch.cat([kinase_token.unsqueeze(1), seq_rep.unsqueeze(1), proj], axis=1)
+        x = x + self.pos_embed(x)
+        # src_key_padding_mask contains True if token i is padding, otherwise False
         x = self.encoder(x, src_key_padding_mask=torch.bitwise_not(enc_mask.bool()))
         return self.classifier(x)[:, 1:], base_out
 
