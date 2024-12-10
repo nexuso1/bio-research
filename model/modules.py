@@ -240,3 +240,33 @@ class ResidualMLP(torch.nn.Module):
 
         x = self.norms[-1](x)
         return self.layers[-1](x)
+    
+class FusedMBConv1D(torch.nn.Module):
+    def __init__(self, input_dim : int, output_dim : int, expand : int, kernel_size : int, stride : int = 1, activ=None, dropout=0):
+        super(FusedMBConv1D, self).__init__()
+        padding = (kernel_size - 1) // 2
+        exp_dim = input_dim * expand
+        self.res_con = input_dim == output_dim
+        self.expand = torch.nn.Conv1d(input_dim, exp_dim, kernel_size, stride, padding)
+        self.activ = activ if activ is not None else torch.nn.Identity()
+        self.norm1 = torch.nn.LayerNorm(exp_dim)
+        self.project = torch.nn.Conv1d(exp_dim, output_dim, kernel_size=1, stride=1, padding=0)
+        self.norm2 = torch.nn.LayerNorm(output_dim)
+        self.dropout = torch.nn.Dropout1d(dropout)
+
+    def forward(self, inputs : torch.Tensor):
+        """
+        Expects input in form of [B, S, CH]
+        """
+        inputs = inputs.moveaxis(-1, 1)
+        x = self.expand(inputs)
+        x = self.norm1(x)
+        x = self.activ(x)
+        x = self.project(x)
+        x = self.norm2(x)
+        x = self.dropout(x)
+
+        if self.res_con:
+            x = x + inputs
+        
+        return x.moveaxis(1, -1)
