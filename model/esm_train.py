@@ -21,44 +21,8 @@ from datasets import Dataset
 from transformers import set_seed, EsmModel, AutoTokenizer
 from token_classifier_base import TokenClassifier, TokenClassifierConfig
 from classifiers import RNNTokenClassifier, RNNTokenClassiferConfig
+from training import device, parser
 
-
-parser = argparse.ArgumentParser()
-
-parser.add_argument('--seed', type=int, help='Random seed', default=42)
-parser.add_argument('--batch_size', type=int, help='Batch size)', default=4)
-parser.add_argument('--epochs', type=int, help='Number of training epochs', default=20)
-parser.add_argument('--max_length', type=int, help='Maximum sequence length (shorter sequences will be pruned)', default=1024)
-parser.add_argument('--prot_info_path', type=str, 
-                     help='Path to the protein dataset. Expects a dataframe with columns ("id", "sequence", "sites"). "sequence" is the protein AA string, "sites" is a list of phosphorylation sites.',
-                     default='../data/phosphosite_sequences/phosphosite_df.json')
-parser.add_argument('--dataset_path', type=str, help='Path to the prepared dataset, with information about train, test sets; and folds.', default='../data/splits_S.json')
-parser.add_argument('--fine_tune', action='store_true', help='Use fine tuning on the base model or not. Default is False', default=False)
-parser.add_argument('--ft_only', action='store_true', help='Skip pre-training, only fine-tune', default=False)
-parser.add_argument('--weight_decay', type=float, help='Weight decay', default=1e-4)
-parser.add_argument('--accum', type=int, help='Number of gradient accumulation steps', default=3)
-parser.add_argument('--val_batch', type=int, help='Validation batch size', default=10)
-parser.add_argument('--hidden_size', type=int, help='Classifier hidden size', default=128)
-parser.add_argument('--lr', type=float, help='Learning rate', default=3e-4)
-parser.add_argument('-o', type=str, help='Output folder', default=None)
-parser.add_argument('-n', type=str, help='Model name', default='esm')
-parser.add_argument('--compile', action='store_true', default=False, help='Compile the model')
-parser.add_argument('--lora', action='store_true', help='Use LoRA', default=False)
-parser.add_argument('--dropout', type=float, help='Dropout probability', default=0)
-parser.add_argument('--ft_epochs', type=int, help='Number of epochs for finetuning', default=10)
-parser.add_argument('--type', help='ESM Model type', type=str, default='650M')
-parser.add_argument('--pos_weight', help='Positive class weight', type=float, default=3)
-parser.add_argument('--num_workers', help='Number of multiprocessign workers', type=int, default=0)
-parser.add_argument('--n_layers', help='Number of RNN/Transformer classifier layers', type=int, default=1)
-parser.add_argument('--checkpoint_path', help='Resume training from checkpoint', type=str, default=None)
-parser.add_argument('--model_path', help='Load model from this path (not a checkpoint)', type=str, default=None)
-parser.add_argument('--use_cnn', help='Use CNN seq reps', action='store_true', default=False)
-parser.add_argument('--focal', help='Use focal loss. In this mode, pos_weight will be treated as the alpha parameter.', action='store_true', default=False)
-parser.add_argument('--residues', help='List of residues to train on', default="['S', 'T', 'Y']", type=str)
-parser.add_argument('--ignore_label', help='Label that will be ignored by the loss', default=-1, type=int)
-parser.add_argument('--patience', help='Patience during training', default=20, type=int)
-
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
 @dataclass

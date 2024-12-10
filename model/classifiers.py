@@ -24,7 +24,8 @@ class EncoderClassifierConfig(TokenClassifierConfig):
     hidden_size : int = 256
     n_heads : int = 8
     n_layers : int = 1
-    sr_dim : int = 256
+    sr_dim : int = 256,
+    sr_n_tokens : int = 1
     pos_embed_type : str = 'sin'
     cnn_type : str = 'basic'
     sr_cnn_layers : list[ConvLayerConfig|FusedMBConvConfig] = field(default_factory= lambda :[
@@ -130,18 +131,19 @@ class KinaseClassifier(EncoderClassifier):
         kinase_embeds = torch.load(config.kinase_emb_path)
         kinase_info = pd.read_csv(config.kinase_info_path)
         kinases = [v for k,v in kinase_embeds.items() if k in set(kinase_info['kinase_top1_id'])]
-        self.register_buffer('kinases', self.config.kinases)
+        self.register_buffer('kinases', kinases)
 
     def forward(self, input_ids, attention_mask, **kwargs):
         base_out = self.base(input_ids=input_ids, attention_mask=attention_mask)
         x = base_out[0]
         proj = self.res_cnn(x)
-        seq_rep = self.sr_cnn(x)
+
         seq_rep = self.seq_rep(seq_rep)
         kinase_reps = self.seq_rep(self.kinases)
         enc_mask = torch.cat([torch.ones(attention_mask.shape[0], 2, device=self.device), attention_mask], 1)
         x = torch.cat([kinase_reps, seq_rep.unsqueeze(1), proj], axis=1)
         x = x + self.pos_embed(x)
+
         # src_key_padding_mask contains True if token i is padding, otherwise False
         x = self.encoder(x, src_key_padding_mask=torch.bitwise_not(enc_mask.bool()))
         return self.classifier(x)[:, 1:], base_out

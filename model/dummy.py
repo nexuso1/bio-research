@@ -1,7 +1,7 @@
 from classifiers import DummyClassifier, TokenClassifierConfig
 from transformers import AutoTokenizer
-from esm_train import parser, create_loss
-from training import run_training
+from training import  parser, create_loss, run_training
+
 def create_model(args):
     config = TokenClassifierConfig(1, create_loss(args))
     model = DummyClassifier(config, None)

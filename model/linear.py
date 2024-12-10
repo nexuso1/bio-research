@@ -1,6 +1,6 @@
-from esm_train import get_esm, parser, create_loss
+from esm_train import get_esm
 from classifiers import LinearClassifier, TokenClassifierConfig
-from training import run_training
+from training import run_training, parser, create_loss
 
 def create_model(args):
     esm, tokenizer = get_esm(args.type)

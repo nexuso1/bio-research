@@ -1,5 +1,6 @@
 import ast
-from esm_train import run_training, get_esm, parser, create_loss
+from esm_train import get_esm
+from training import  parser, create_loss, run_training
 from classifiers import SelectiveFinetuningClassifier, SelectiveFinetuningClassifierConfig
 
 def create_model(args):

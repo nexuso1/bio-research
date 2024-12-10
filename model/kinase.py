@@ -1,9 +1,9 @@
-from classifiers import KinaseClassifierA, KinaseClassifierB
-from esm_train import parser
-from training import run_training
+from classifiers import KinaseClassifier
+from esm_train import get_esm
+from training import run_training, parser
 
 def create_model(args):
-    config = 
+    config = ...
 
 def main(args):
     run_training(args, create_model)

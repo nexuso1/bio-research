@@ -1,6 +1,6 @@
 from classifiers import UniPTM, TokenClassifierConfig
-from esm_train import create_loss, get_esm, parser
-from training import run_training
+from esm_train import get_esm
+from training import run_training, create_loss, parser
 
 def create_model(args):
     conf = TokenClassifierConfig(1, loss = create_loss(args)) # ignored
