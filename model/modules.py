@@ -27,6 +27,10 @@ class ConvLayerConfig:
     num_layers : int
     stride : int
 
+@dataclass
+class FusedMBConvConfig(ConvLayerConfig):
+    expand : int
+
 class ConvNormActiv1D(torch.nn.Module):
     def __init__(self, in_channels : int, out_channels : int, kernel_size : int, stride : int, padding : int) -> None:
         super().__init__()
@@ -163,6 +167,32 @@ class Conv1dModel(torch.nn.Module):
         for config in layer_configs:
             self.downs.append(Down1D(config.in_channels, config.out_channels, num_layers=config.num_layers,
                                       kernel_size=config.kernel_size, stride=config.stride, dropout=dropout))
+        self.downs = torch.nn.ModuleList(self.downs)
+        self.pool = pool
+
+    def forward(self, inputs):
+        x = self.downs[0](inputs)
+        for d in self.downs[1:]:
+            x = d(x)
+
+        if self.pool:
+            x = x.max(1)[0]
+
+        return x.squeeze()
+
+class FusedMBConv1dModel(torch.nn.Module):
+    """
+    Based on EfficientNetV2: Smaller Models and Faster Training [https://arxiv.org/abs/2104.00298]
+    SE block in the diagram is not used in practice, so it is not used here either
+    """
+    def __init__(self, layer_configs : list[FusedMBConvConfig], pool=False, dropout=0) -> None:
+        super().__init__()
+        self.downs = []
+        self.activ = torch.nn.ReLU()
+        for config in layer_configs:
+            self.downs.append(FusedMBConv1D(config.in_channels, config.out_channels, num_layers=config.num_layers,
+                                      kernel_size=config.kernel_size, stride=config.stride, dropout=dropout, activ=self.activ,
+                                      expand=config.expand))
         self.downs = torch.nn.ModuleList(self.downs)
         self.pool = pool
 
