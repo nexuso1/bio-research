@@ -31,9 +31,11 @@ def create_model(args):
     
     conf = EncoderClassifierConfig(1, loss = create_loss(args), mlp_layers=mlp_layers,
                                     n_layers=args.n_layers, dropout_rate=args.dropout,
+                                    sr_dim=args.encoder_dim,
                                     sr_cnn_layers=sr_cnn_layers,
                                     res_cnn_layers=res_cnn_layers,
-                                    cnn_type=args.cnn_type)
+                                    cnn_type=args.cnn_type,
+                                    encoder_dim=args.encoder_dim)
     
     classifier = EncoderClassifier(conf, base)
  

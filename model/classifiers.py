@@ -22,9 +22,10 @@ class RNNTokenClassiferConfig(TokenClassifierConfig):
 @dataclass
 class EncoderClassifierConfig(TokenClassifierConfig):
     hidden_size : int = 256
+    encoder_dim : int = 256
     n_heads : int = 8
     n_layers : int = 1
-    sr_dim : int = 256,
+    sr_dim : int = 256
     sr_n_tokens : int = 1
     pos_embed_type : str = 'sin'
     cnn_type : str = 'basic'
@@ -64,7 +65,7 @@ class LinearClassifier(TokenClassifier):
 class EncoderClassifier(TokenClassifier):
     def __init__(self, config: EncoderClassifierConfig, base_model: Module) -> None:
         super().__init__(config, base_model)
-        enc_layer = torch.nn.TransformerEncoderLayer(config.sr_dim, nhead=config.n_heads,
+        enc_layer = torch.nn.TransformerEncoderLayer(config.encoder_dim, nhead=config.n_heads,
                                                     dim_feedforward=config.hidden_size,
                                                     activation='relu', batch_first=True)
         
