@@ -15,7 +15,6 @@ from PIL import Image
 from token_classifier_base import TokenClassifier
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from utils import Metadata, sigmoid_focal_loss
-from esm_train import save_model
 from lightning.pytorch.loggers import TensorBoardLogger
 from data_loading import prepare_datasets
 from transformers import AutoTokenizer
@@ -163,7 +162,23 @@ class LightningWrapper(L.LightningModule):
             "monitor" : "train_loss",
             "frequency" : 1
         }}
-    
+
+def save_model(args, model : TokenClassifier, name : str):
+    """
+    Saves the model to the folder args.o if given, otherwise to args.logdir, with the given name.
+    """
+    if args.o is None:
+        folder = args.logdir
+    else:
+        folder = args.o
+
+    save_path = f'{folder}/{name}.pt'
+    if not os.path.exists(f'{folder}'):
+        os.mkdir(f'{folder}')
+
+    model.save(save_path)
+    print(f'Model saved to {save_path}')
+
 def create_loss(args):
     # Create a loss function
     if args.focal:

@@ -21,7 +21,7 @@ from datasets import Dataset
 from transformers import set_seed, EsmModel, AutoTokenizer
 from token_classifier_base import TokenClassifier, TokenClassifierConfig
 from classifiers import RNNTokenClassifier, RNNTokenClassiferConfig
-from training import device, parser
+from training import device, parser,save_model
 
 print(device)
 
@@ -232,21 +232,6 @@ def load_from_checkpoint(path, create_model_fn):
         return model, tokenizer, optim, epoch, chkpt['best_f1'], args
     return model, tokenizer, optim, epoch, 0, args
 
-def save_model(args, model : TokenClassifier, name : str):
-    """
-    Saves the model to the folder args.o if given, otherwise to args.logdir, with the given name.
-    """
-    if args.o is None:
-        folder = args.logdir
-    else:
-        folder = args.o
-
-    save_path = f'{folder}/{name}.pt'
-    if not os.path.exists(f'{folder}'):
-        os.mkdir(f'{folder}')
-
-    model.save(save_path)
-    print(f'Model saved to {save_path}')
 
 def compute_metrics(y_pred, y, metrics : torchmetrics.MetricCollection):
         """Compute and return metrics given the inputs, predictions, and target outputs."""
