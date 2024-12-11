@@ -1,6 +1,6 @@
 from classifiers import DummyClassifier, TokenClassifierConfig
 from transformers import AutoTokenizer
-from training import  parser, create_loss, run_training
+from training import parser, create_loss, run_training
 
 def create_model(args):
     config = TokenClassifierConfig(1, create_loss(args))

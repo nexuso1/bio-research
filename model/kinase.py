@@ -1,6 +1,6 @@
 from classifiers import KinaseClassifier
 from esm_train import get_esm
-from training import run_training, parser
+from training import run_training, parser, create_loss
 
 def create_model(args):
     config = ...

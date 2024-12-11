@@ -1,7 +1,7 @@
 from classifiers import EncoderClassifier, EncoderClassifierConfig, ConvLayerConfig, FusedMBConvConfig
 from argparse import ArgumentParser
 from training import run_training, parser, create_loss
-from esm_train import get_esm, create_loss
+from esm_train import get_esm
 import numpy as np
 
 def create_model(args):
