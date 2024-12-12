@@ -1,12 +1,13 @@
 import torch
 import lightning as L
-import torchmetrics
 import os.path
 import datetime
 import matplotlib.pyplot as plt
 import io
 import json
 
+from torchmetrics import F1Score, MatthewsCorrCoef, Precision, Recall, AUROC, \
+MeanMetric, AveragePrecision, PrecisionRecallCurve, MetricCollection
 from torch.utils.data import DataLoader
 from data_loading import prep_batch
 from functools import partial
@@ -53,8 +54,8 @@ parser.add_argument('--patience', help='Patience during training', default=20, t
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class LightningWrapper(L.LightningModule):
-    def __init__(self, args, module : TokenClassifier, epoch_metrics : torchmetrics.MetricCollection,
-                 step_metrics : torchmetrics.MetricCollection, ds_size : int):
+    def __init__(self, args, module : TokenClassifier, epoch_metrics : MetricCollection,
+                 step_metrics : MetricCollection, ds_size : int):
         super(LightningWrapper, self).__init__()
         self.classifier = module
         self.ds_size = ds_size
@@ -66,8 +67,8 @@ class LightningWrapper(L.LightningModule):
         self.test_epoch_metrics = epoch_metrics.clone(prefix='test_')
         self.val_epoch_metrics = epoch_metrics.clone(prefix='val_')
 
-        self.loss_metric = torchmetrics.MeanMetric()
-        self.prc = torchmetrics.PrecisionRecallCurve('binary', ignore_index=self.classifier.ignore_index)
+        self.loss_metric = MeanMetric()
+        self.prc = PrecisionRecallCurve('binary', ignore_index=self.classifier.ignore_index)
         self.test_preds = []
         self.save_hyperparameters(args)
 
@@ -192,7 +193,7 @@ def train_model(args, train, dev, test, model, logdir):
     es_callback = EarlyStopping('val_f1', patience=args.patience)
 
     # Use deepspeed 
-    if torch.cuda.device_count() > 0:
+    if torch.cuda.device_count() > 1:
         strategy = "deepspeed_stage_2"
     else:
         strategy = "auto"
@@ -239,19 +240,19 @@ def run_training(args : Namespace, create_model_fn):
     
     full_dataset = prepare_datasets(args, tokenizer, ignore_label=args.ignore_label)
 
-    step_metrics = torchmetrics.MetricCollection({
-        'f1' : torchmetrics.F1Score(task='binary', ignore_index=args.ignore_label),
-        'precision' : torchmetrics.Precision(task='binary',ignore_index=args.ignore_label),
-        'recall' : torchmetrics.Recall(task='binary', ignore_index=args.ignore_label),
+    step_metrics = MetricCollection({
+        'f1' : F1Score(task='binary', ignore_index=args.ignore_label),
+        'precision' : Precision(task='binary',ignore_index=args.ignore_label),
+        'recall' : Recall(task='binary', ignore_index=args.ignore_label),
     })
 
-    epoch_metrics = torchmetrics.MetricCollection({
-        'f1' : torchmetrics.F1Score(task='binary', ignore_index=args.ignore_label),
-        'precision' : torchmetrics.Precision(task='binary',ignore_index=args.ignore_label),
-        'recall' : torchmetrics.Recall(task='binary', ignore_index=args.ignore_label),
-        'auroc' : torchmetrics.AUROC('binary', ignore_index=args.ignore_label),
-        'auprc' : torchmetrics.AveragePrecision('binary', ignore_index=args.ignore_label),
-        'mcc' : torchmetrics.MatthewsCorrCoef('binary', ignore_index=args.ignore_label)
+    epoch_metrics = MetricCollection({
+        'f1' : F1Score(task='binary', ignore_index=args.ignore_label),
+        'precision' : Precision(task='binary',ignore_index=args.ignore_label),
+        'recall' : Recall(task='binary', ignore_index=args.ignore_label),
+        'auroc' : AUROC('binary', ignore_index=args.ignore_label),
+        'auprc' : AveragePrecision('binary', ignore_index=args.ignore_label),
+        'mcc' : MatthewsCorrCoef('binary', ignore_index=args.ignore_label)
     })
 
     if not args.checkpoint_path:
