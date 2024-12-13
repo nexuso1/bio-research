@@ -83,8 +83,6 @@ class EncoderClassifier(TokenClassifier):
 
         if config.sr_type == 'cnn':
             self.create_sr_cnn()
-        else:
-            self.mean_embeds = True
         
         # Create the residue representation CNN
         if config.cnn_type == 'basic':
@@ -139,7 +137,7 @@ class EncoderClassifier(TokenClassifier):
         x = base_out[0]
         proj = self.res_cnn(x)
         
-        if self.mean_embeds:
+        if self.config.sr_type == 'mean':
             seq_rep = self.get_mean_sequence_reps(x, kwargs['batch_lens'])
         else:
             seq_rep = self.seq_rep(x)
