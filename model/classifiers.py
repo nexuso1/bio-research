@@ -28,6 +28,7 @@ class EncoderClassifierConfig(TokenClassifierConfig):
     sr_dim : int = 256
     sr_n_tokens : int = 1
     pos_embed_type : str = 'sin'
+    sr_type : str = 'cnn'
     cnn_type : str = 'basic'
     sr_type : str = 'cnn'
     sr_cnn_layers : list[ConvLayerConfig|FusedMBConvConfig] = field(default_factory= lambda :[
@@ -82,6 +83,8 @@ class EncoderClassifier(TokenClassifier):
 
         if config.sr_type == 'cnn':
             self.create_sr_cnn()
+        else:
+            self.mean_embeds = True
         
         # Create the residue representation CNN
         if config.cnn_type == 'basic':
@@ -115,12 +118,32 @@ class EncoderClassifier(TokenClassifier):
                 torch.nn.Linear(self.config.sr_cnn_layers[-1].out_channels, self.config.sr_dim),
                 torch.nn.ReLU()
             )
+        
+    def get_mean_sequence_reps(self, sequence_output : torch.Tensor, batch_lens):
+        # NOTE: token 0 is always a beginning-of-sequence token, so the first residue is token 1.
+        pad_mask = torch.arange(0, sequence_output.shape[0], device=self.device)[:, None, None].expand_as(sequence_output)
+        lens_reshaped = batch_lens[:, None, None].expand_as(pad_mask)
+        # Prepare the mask
+        pad_mask = pad_mask > lens_reshaped # True if a given position is padding
+        # Zero the padding values
+        sequence_output[pad_mask] = 0
+        # Zero the BOS token
+        sequence_output[:, 0, :] = 0 
+        # Calculate the sequence means
+        seq_rep = torch.mean(sequence_output, 1)
+
+        return seq_rep
 
     def forward(self, input_ids, attention_mask, **kwargs):
         base_out = self.base(input_ids=input_ids, attention_mask=attention_mask)
         x = base_out[0]
         proj = self.res_cnn(x)
-        seq_rep = self.seq_rep(seq_rep)
+        
+        if self.mean_embeds:
+            seq_rep = self.get_mean_sequence_reps(x, kwargs['batch_lens'])
+        else:
+            seq_rep = self.seq_rep(x)
+        
         enc_mask = torch.cat([torch.ones(attention_mask.shape[0], 1, device=self.device), attention_mask], 1)
         x = torch.cat([seq_rep.unsqueeze(1), proj], axis=1)
         x = x + self.pos_embed(x)

@@ -236,14 +236,31 @@ class SinPositionalEncoding(torch.nn.Module):
             return x + self.pe[0, :x.size(1)].view(1, -1, x.size(2), x.size(3))
         
         return x + self.pe[0, :x.size(1)]
+
+    
+class ResidualDense(torch.nn.Module):
+    def __init__(self, input_size, output_size, activation=None):
+        super(ResidualDense, self).__init__()
+        self.dense = torch.nn.Linear(input_size, output_size)
+        self.res_con = input_size == output_size
+        self.activation = activation if activation is not None else torch.nn.Identity()
+        
+    def forward(self, inputs):
+        x = self.dense(inputs)
+        x = self.activation(inputs)
+        
+        if self.res_con:
+            x = x + inputs
+            
+        return x
     
 class ResidualMLP(torch.nn.Module):
     def __init__(self, layer_sizes: list[int], input_size,  activation=None, norm=False, dropout=0):
         super(ResidualMLP, self).__init__()
         layer_list = []
-        layer_list.append(torch.nn.Linear(input_size, layer_sizes[0]))
+        layer_list.append(ResidualDense(input_size, layer_sizes[0], activation))
         for i in range(len(layer_sizes) - 1):
-            layer_list.append(torch.nn.Linear(layer_sizes[i], layer_sizes[i + 1]))
+            layer_list.append(ResidualDense(layer_sizes[i], layer_sizes[i + 1]))
         
         self.layers = torch.nn.ModuleList(layer_list)
         self.activation = activation
@@ -259,13 +276,9 @@ class ResidualMLP(torch.nn.Module):
     def forward(self, x):
         for i in range(len(self.layers) - 1):
             if len(self.norms) > 0:
-                y = self.norms[i](x)
+                x = self.norms[i](x)
 
-            y = self.layers[i](y)
-            if self.activation is not None:
-                y = self.activation(y)
-            
-            x = x + y
+            x = self.layers[i](x)
             x = self.dropout(x)
 
         x = self.norms[-1](x)

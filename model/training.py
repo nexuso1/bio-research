@@ -275,7 +275,7 @@ def run_training(args : Namespace, create_model_fn):
     for i in range(meta.data['current_fold'], full_dataset.n_splits):
         meta.data['current_fold'] = i
         meta.save(master_logdir)
-
+        print(f'Current fold: {i}')
         train_ds, dev_ds, test_ds = full_dataset.get_fold(i)
         
         train = DataLoader(train_ds, args.batch_size, shuffle=True,
