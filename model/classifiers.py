@@ -29,6 +29,7 @@ class EncoderClassifierConfig(TokenClassifierConfig):
     sr_n_tokens : int = 1
     pos_embed_type : str = 'sin'
     cnn_type : str = 'basic'
+    sr_type : str = 'cnn'
     sr_cnn_layers : list[ConvLayerConfig|FusedMBConvConfig] = field(default_factory= lambda :[
             ConvLayerConfig(1280, 256, 5, 2, 2),
             ConvLayerConfig(256, 378, 5, 2, 2),
@@ -71,7 +72,7 @@ class EncoderClassifier(TokenClassifier):
         
         # Setup positional embeddings
         if config.pos_embed_type == 'sin':
-            self.pos_embed = SinPositionalEncoding(config.sr_dim, 1026) # [seq_rep][cls]...[eos]
+            self.pos_embed = SinPositionalEncoding(config.sr_dim, 1024 + config.sr_n_tokens) # [seq_rep][cls]...[eos]
         # elif config.pos_embed_type == 'rope':
         #     self.pos_embed = RotaryPositionalEmbeddings(config.sr_dim // config.n_heads, 1024)
         else:
@@ -102,7 +103,7 @@ class EncoderClassifier(TokenClassifier):
     def create_sr_cnn(self):
         # Create sequence-representation CNN
         if self.config.cnn_type == 'basic':
-            self.sr_cnn = Conv1dModel(self.config.sr_cnn_layers, self.config.sr_cnn_layers[-1].out_channels, self.config.dropout_rate, pool=True)
+            self.sr_cnn = Conv1dModel(self.config.sr_cnn_layers, dropout=self.config.dropout_rate, pool=True)
         elif self.config.cnn_type == 'fused':
             self.sr_cnn = FusedMBConv1dModel(self.config.sr_cnn_layers, pool=True, dropout=self.config.dropout_rate)
         
