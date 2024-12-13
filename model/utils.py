@@ -192,8 +192,6 @@ def sigmoid_focal_loss(
     """
     # Original implementation from https://github.com/facebookresearch/fvcore/blob/master/fvcore/nn/focal_loss.py
 
-    if not torch.jit.is_scripting() and not torch.jit.is_tracing():
-        _log_api_usage_once(sigmoid_focal_loss)
     p = torch.sigmoid(inputs)
     ce_loss = binary_cross_entropy_with_logits(inputs, targets, reduction="none")
     p_t = p * targets + (1 - p) * (1 - targets)
