@@ -32,28 +32,34 @@ class FusedMBConvConfig(ConvLayerConfig):
     expand : int
 
 class ConvNormActiv1D(torch.nn.Module):
-    def __init__(self, in_channels : int, out_channels : int, kernel_size : int, stride : int, padding : int) -> None:
+    def __init__(self, in_channels : int, out_channels : int, kernel_size : int, stride : int, padding : int, activ=None) -> None:
         super().__init__()
         self.conv = torch.nn.Conv1d(in_channels, out_channels, kernel_size=kernel_size, padding=padding, stride=stride)
         self.norm = torch.nn.LayerNorm(out_channels)
-        self.activ = torch.nn.ReLU()
+        self.activ = activ
 
     def forward(self, inputs : torch.Tensor):
         x = self.conv(inputs)
         x = self.norm(x.moveaxis(-1, 1))
-        return self.activ(x.moveaxis(1, -1))
+        x = x.moveaxis(1, -1)
+        if self.activ is not None:
+            x = self.activ(x)
+        return x
     
 class TransposeConvNormActiv1D(torch.nn.Module):
-    def __init__(self, in_channels : int, out_channels : int, kernel_size : int, stride : int, padding : int) -> None:
+    def __init__(self, in_channels : int, out_channels : int, kernel_size : int, stride : int, padding : int, activ=None) -> None:
         super().__init__()
         self.conv = torch.nn.ConvTranspose1d(in_channels, out_channels, kernel_size=kernel_size, padding=padding, stride=stride)
         self.norm = torch.nn.LayerNorm(out_channels)
-        self.activ = torch.nn.ReLU()
+        self.activ = activ
 
     def forward(self, inputs : torch.Tensor):
         x = self.conv(inputs)
         x = self.norm(x.moveaxis(-1, 1))
-        return self.activ(x.moveaxis(1, -1))
+        x = x.moveaxis(1, -1)
+        if self.activ is not None:
+            x = self.activ(x)
+        return x
 
 class Up1D(torch.nn.Module):
     def __init__(self, in_channels : int, out_channels : int, num_layers : int = 3, kernel_size : int = 3, stride : int = 2,
@@ -84,10 +90,10 @@ class Up1D(torch.nn.Module):
         return torch.moveaxis(x, 1, -1)
 
 class Down1D(torch.nn.Module):
-    def __init__(self, in_channels, out_channels, num_layers=3, kernel_size=3, stride=2, dropout=0) -> None:
+    def __init__(self, in_channels, out_channels, num_layers=3, kernel_size=3, stride=2, dropout=0, activ=None) -> None:
         super().__init__()
         self.down = ConvNormActiv1D(in_channels, out_channels, kernel_size=kernel_size, stride=stride,
-                                    padding=(kernel_size - 1) // 2)
+                                    padding=(kernel_size - 1) // 2, activ=activ)
         self.layers = []
         for _ in range(num_layers-1):
             self.layers.append(ConvNormActiv1D(out_channels, out_channels, kernel_size=kernel_size, padding=(kernel_size - 1) // 2, stride=1))
@@ -161,12 +167,13 @@ class Unet1D(torch.nn.Module):
 
 
 class Conv1dModel(torch.nn.Module):
-    def __init__(self, layer_configs : list[ConvLayerConfig], pool=True, dropout=0) -> None:
+    def __init__(self, layer_configs : list[ConvLayerConfig], pool=True, dropout=0, activ=None) -> None:
         super().__init__()
         self.downs = []
+        self.activ = activ
         for config in layer_configs:
             self.downs.append(Down1D(config.in_channels, config.out_channels, num_layers=config.num_layers,
-                                      kernel_size=config.kernel_size, stride=config.stride, dropout=dropout))
+                                      kernel_size=config.kernel_size, stride=config.stride, dropout=dropout, activ=activ))
         self.downs = torch.nn.ModuleList(self.downs)
         self.pool = pool
 
@@ -185,10 +192,10 @@ class FusedMBConv1dModel(torch.nn.Module):
     Based on EfficientNetV2: Smaller Models and Faster Training [https://arxiv.org/abs/2104.00298]
     SE block in the diagram is not used in practice, so it is not used here either
     """
-    def __init__(self, layer_configs : list[FusedMBConvConfig], pool=False, dropout=0) -> None:
+    def __init__(self, layer_configs : list[FusedMBConvConfig], pool=False, dropout=0, activ=None) -> None:
         super().__init__()
         self.downs = []
-        self.activ = torch.nn.ReLU()
+        self.activ = activ
         for config in layer_configs:
             self.downs.append(FusedMBConv1D(config.in_channels, config.out_channels,
                                       kernel_size=config.kernel_size, stride=config.stride, dropout=dropout, activ=self.activ,
@@ -288,7 +295,7 @@ class FusedMBConv1D(torch.nn.Module):
         super(FusedMBConv1D, self).__init__()
         padding = (kernel_size - 1) // 2
         exp_dim = input_dim * expand
-        self.res_con = input_dim == output_dim
+        self.res_con = input_dim == output_dim and stride == 1
         self.expand = torch.nn.Conv1d(input_dim, exp_dim, kernel_size, stride, padding)
         self.activ = activ if activ is not None else torch.nn.Identity()
         self.norm1 = torch.nn.LayerNorm(exp_dim)

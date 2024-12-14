@@ -31,6 +31,7 @@ class EncoderClassifierConfig(TokenClassifierConfig):
     sr_type : str = 'cnn'
     cnn_type : str = 'basic'
     sr_type : str = 'cnn'
+    ffw_dim : int = 2048
     sr_cnn_layers : list[ConvLayerConfig|FusedMBConvConfig] = field(default_factory= lambda :[
             ConvLayerConfig(1280, 256, 5, 2, 2),
             ConvLayerConfig(256, 378, 5, 2, 2),
@@ -67,32 +68,32 @@ class LinearClassifier(TokenClassifier):
 class EncoderClassifier(TokenClassifier):
     def __init__(self, config: EncoderClassifierConfig, base_model: Module) -> None:
         super().__init__(config, base_model)
-        enc_layer = torch.nn.TransformerEncoderLayer(config.sr_dim, nhead=config.n_heads,
-                                                    dim_feedforward=config.encoder_dim,
+        enc_layer = torch.nn.TransformerEncoderLayer(config.encoder_dim, nhead=config.n_heads,
+                                                    dim_feedforward=config.ffw_dim,
                                                     activation='relu', batch_first=True)
         
         # Setup positional embeddings
         if config.pos_embed_type == 'sin':
-            self.pos_embed = SinPositionalEncoding(config.sr_dim, 1024 + config.sr_n_tokens) # [seq_rep][cls]...[eos]
+            self.pos_embed = SinPositionalEncoding(config.encoder_dim, 1024 + config.sr_n_tokens) # [seq_rep][cls]...[eos]
         # elif config.pos_embed_type == 'rope':
         #     self.pos_embed = RotaryPositionalEmbeddings(config.sr_dim // config.n_heads, 1024)
         else:
             self.pos_embed = None
 
-        self.encoder = torch.nn.TransformerEncoder(enc_layer, norm=torch.nn.LayerNorm(config.sr_dim), num_layers=config.n_layers)
+        self.encoder = torch.nn.TransformerEncoder(enc_layer, norm=torch.nn.LayerNorm(config.encoder_dim), num_layers=config.n_layers)
 
         if config.sr_type == 'cnn':
             self.create_sr_cnn() # Creates and initializes the seq. rep CNN
         
         # Create the residue representation CNN
         if config.cnn_type == 'basic':
-            self.res_cnn = Conv1dModel(config.res_cnn_layers, pool=False, dropout=self.config.dropout_rate)
+            self.res_cnn = Conv1dModel(config.res_cnn_layers, pool=False, dropout=0)
         elif config.cnn_type == 'fused':
-            self.res_cnn = FusedMBConv1dModel(config.res_cnn_layers, pool=False, dropout=config.dropout_rate)
+            self.res_cnn = FusedMBConv1dModel(config.res_cnn_layers, pool=False, dropout=0)
 
         # Create a residual MLP classifier
         self.classifier = ResidualMLP(self.config.mlp_layers,
-                                       input_size=config.sr_dim, activation=torch.nn.ReLU(), norm=torch.nn.LayerNorm,
+                                       input_size=config.encoder_dim, activation=torch.nn.ReLU(), norm=torch.nn.LayerNorm,
                                        dropout=config.dropout_rate)
         
         # Initialize the modules
@@ -106,19 +107,19 @@ class EncoderClassifier(TokenClassifier):
     def create_sr_cnn(self):
         # Create sequence-representation CNN
         if self.config.cnn_type == 'basic':
-            self.sr_cnn = Conv1dModel(self.config.sr_cnn_layers, dropout=self.config.dropout_rate, pool=True)
+            self.sr_cnn = Conv1dModel(self.config.sr_cnn_layers, dropout=0, pool=True, activ=torch.nn.ReLU())
         elif self.config.cnn_type == 'fused':
-            self.sr_cnn = FusedMBConv1dModel(self.config.sr_cnn_layers, pool=True, dropout=self.config.dropout_rate)
+            self.sr_cnn = FusedMBConv1dModel(self.config.sr_cnn_layers, pool=True, dropout=0, activ=torch.nn.ReLU())
         
         # Create the FFN part
-        self.seq_rep = torch.nn.Sequential(
-                self.sr_cnn,
-                torch.nn.Flatten(),
-                torch.nn.LayerNorm(self.config.sr_cnn_layers[-1].out_channels),
-                torch.nn.Linear(self.config.sr_cnn_layers[-1].out_channels, self.config.sr_dim),
-                torch.nn.ReLU()
-            )
-        
+        #self.seq_rep = torch.nn.Sequential(
+        #        self.sr_cnn,
+        #        torch.nn.Flatten(),
+        #        torch.nn.LayerNorm(self.config.sr_cnn_layers[-1].out_channels),
+        #        torch.nn.Linear(self.config.sr_cnn_layers[-1].out_channels, self.config.sr_dim),
+        #        torch.nn.ReLU()
+        #    )
+        self.seq_rep = self.sr_cnn
         # Initialize weights
         self.seq_rep.apply(self.xavier_init)
         
@@ -147,10 +148,10 @@ class EncoderClassifier(TokenClassifier):
         else:
             seq_rep = self.seq_rep(x)
         
-        enc_mask = torch.cat([torch.ones(attention_mask.shape[0], 1, device=self.device), attention_mask], 1)
+        #enc_mask = torch.cat([torch.ones(attention_mask.shape[0], 1, device=self.device), attention_mask], 1)
         x = torch.cat([seq_rep.unsqueeze(1), proj], axis=1)
         x = x + self.pos_embed(x)
-        x = self.encoder(x, src_key_padding_mask=torch.bitwise_not(enc_mask.bool()))
+        x = self.encoder(x)
         return self.classifier(x)[:, 1:], base_out
     
 class KinaseClassifier(EncoderClassifier):
