@@ -79,7 +79,7 @@ class EncoderClassifier(TokenClassifier):
         else:
             self.pos_embed = None
 
-        self.encoder = torch.nn.TransformerEncoder(enc_layer, norm=torch.nn.LayerNorm, num_layers=config.n_layers)
+        self.encoder = torch.nn.TransformerEncoder(enc_layer, norm=torch.nn.LayerNorm(config.sr_dim), num_layers=config.n_layers)
 
         if config.sr_type == 'cnn':
             self.create_sr_cnn() # Creates and initializes the seq. rep CNN
@@ -92,7 +92,7 @@ class EncoderClassifier(TokenClassifier):
 
         # Create a residual MLP classifier
         self.classifier = ResidualMLP(self.config.mlp_layers,
-                                       input_size=config.sr_dim, activation=torch.nn.ReLU(), norm=torch.nn.LayerNorm(config.sr_dim),
+                                       input_size=config.sr_dim, activation=torch.nn.ReLU(), norm=torch.nn.LayerNorm,
                                        dropout=config.dropout_rate)
         
         # Initialize the modules
