@@ -92,7 +92,7 @@ class EncoderClassifier(TokenClassifier):
 
         # Create a residual MLP classifier
         self.classifier = ResidualMLP(self.config.mlp_layers,
-                                       input_size=config.sr_dim, activation=torch.nn.ReLU(), norm=torch.nn.LayerNorm,
+                                       input_size=config.sr_dim, activation=torch.nn.ReLU(), norm=torch.nn.LayerNorm(config.sr_dim),
                                        dropout=config.dropout_rate)
         
         # Initialize the modules
