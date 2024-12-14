@@ -67,8 +67,8 @@ class LinearClassifier(TokenClassifier):
 class EncoderClassifier(TokenClassifier):
     def __init__(self, config: EncoderClassifierConfig, base_model: Module) -> None:
         super().__init__(config, base_model)
-        enc_layer = torch.nn.TransformerEncoderLayer(config.encoder_dim, nhead=config.n_heads,
-                                                    dim_feedforward=config.hidden_size,
+        enc_layer = torch.nn.TransformerEncoderLayer(config.sr_dim, nhead=config.n_heads,
+                                                    dim_feedforward=config.encoder_dim,
                                                     activation='relu', batch_first=True)
         
         # Setup positional embeddings
@@ -79,7 +79,7 @@ class EncoderClassifier(TokenClassifier):
         else:
             self.pos_embed = None
 
-        self.encoder = torch.nn.TransformerEncoder(enc_layer, config.n_layers)
+        self.encoder = torch.nn.TransformerEncoder(enc_layer, norm=torch.nn.LayerNorm, num_layers=config.n_layers)
 
         if config.sr_type == 'cnn':
             self.create_sr_cnn()
@@ -91,9 +91,11 @@ class EncoderClassifier(TokenClassifier):
             self.res_cnn = FusedMBConv1dModel(config.res_cnn_layers, pool=False, dropout=config.dropout_rate)
 
         # Create a residual MLP classifier
-        self.classifier = ResidualMLP(self.config.mlp_layers,
-                                       input_size=config.sr_dim, activation=torch.nn.ReLU(), norm=torch.nn.LayerNorm,
-                                       dropout=config.dropout_rate)
+        # self.classifier = ResidualMLP(self.config.mlp_layers,
+        #                                input_size=config.sr_dim, activation=torch.nn.ReLU(), norm=torch.nn.LayerNorm,
+        #                                dropout=config.dropout_rate)
+        class_layer = torch.nn.TransformerEncoderLayer(config.encoder_dim, nhead=config.n_heads,dim_feedforward=config.encoder_dim, batch_first=True)
+        self.classifier = torch.nn.TransformerEncoder(class_layer, 1, torch.nn.LayerNorm)
 
         # Initialize the modules
         for module in self.modules():
