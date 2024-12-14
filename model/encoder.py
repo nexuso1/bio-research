@@ -46,18 +46,18 @@ def create_model(args):
 
 def add_arguments(parser : ArgumentParser):
     parser.add_argument('--n_layers_mlp', type=int, help='Number of MLP classifier layers', default=3)
-    parser.add_argument('--block_size', type=int, help='Number of seq. rep. CNN layers in one block', default=2)
+    parser.add_argument('--block_size', type=int, help='Number of seq. rep. CNN layers in one block', default=1)
     parser.add_argument('--cnn_type', type=str, help=
                         '''Type of cnn to be used for seq/residue reps. Options are "basic",
                         for standard Conv1d layers, or "fused", for FusedMBConv layers''',
                         default='basic')
     parser.add_argument('--expand_m', type=int, help='If using FusedMBConv, this is the expansion multiplier.', default=4)
-    parser.add_argument('--sr_n', type=int, help='Number of seq. rep. CNN blocks', default=3)
-    parser.add_argument('--sr_kernel_size', type=int, help='Seq. rep. kernel size', default=5)
-    parser.add_argument('--sr_init_size', type=int, help='Initial dimension for the seq. rep. CNN', default=256)
-    parser.add_argument('--sr_final_size', type=int, help='Final dimension for the seq. rep. CNN', default=1024)
+    parser.add_argument('--sr_n', type=int, help='Number of seq. rep. CNN blocks', default=5)
+    parser.add_argument('--sr_kernel_size', type=int, help='Seq. rep. kernel size', default=7)
+    parser.add_argument('--sr_init_size', type=int, help='Initial dimension for the seq. rep. CNN', default=128)
+    parser.add_argument('--sr_final_size', type=int, help='Final dimension for the seq. rep. CNN', default=512)
     parser.add_argument('--res_kernel_size', type=int, help='Residue representation kernel size', default=31)
-    parser.add_argument('--encoder_dim', type=int, help='Classifier encoder dimension', default=256)
+    parser.add_argument('--encoder_dim', type=int, help='Classifier encoder dimension', default=1024)
 
 def main(args):
     run_training(args, create_model)
