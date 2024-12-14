@@ -59,7 +59,7 @@ def add_arguments(parser : ArgumentParser):
     parser.add_argument('--sr_final_size', type=int, help='Final dimension for the seq. rep. CNN', default=512)
     parser.add_argument('--res_kernel_size', type=int, help='Residue representation kernel size', default=31)
     parser.add_argument('--sr_type', type=str, help='Sequence representation type. Either "mean" or "cnn".', default='cnn')
-    parser.add_argument('--encoder_dim', type=int, help='Classifier encoder dimension', default=256)
+    parser.add_argument('--encoder_dim', type=int, help='Classifier encoder dimension', default=1024)
     parser.add_argument('--expand', type=int, help='Expansion constant for fused mbconv', default=4)
 
 def main(args):
