@@ -190,7 +190,7 @@ class FusedMBConv1dModel(torch.nn.Module):
         self.downs = []
         self.activ = torch.nn.ReLU()
         for config in layer_configs:
-            self.downs.append(FusedMBConv1D(config.in_channels, config.out_channels, num_layers=config.num_layers,
+            self.downs.append(FusedMBConv1D(config.in_channels, config.out_channels,
                                       kernel_size=config.kernel_size, stride=config.stride, dropout=dropout, activ=self.activ,
                                       expand=config.expand))
         self.downs = torch.nn.ModuleList(self.downs)
@@ -247,7 +247,7 @@ class ResidualDense(torch.nn.Module):
         
     def forward(self, inputs):
         x = self.dense(inputs)
-        x = self.activation(inputs)
+        x = self.activation(x)
         
         if self.res_con:
             x = x + inputs
@@ -260,7 +260,7 @@ class ResidualMLP(torch.nn.Module):
         layer_list = []
         layer_list.append(ResidualDense(input_size, layer_sizes[0], activation))
         for i in range(len(layer_sizes) - 1):
-            layer_list.append(ResidualDense(layer_sizes[i], layer_sizes[i + 1]))
+            layer_list.append(ResidualDense(layer_sizes[i], layer_sizes[i + 1], activation))
         
         self.layers = torch.nn.ModuleList(layer_list)
         self.activation = activation
@@ -280,7 +280,6 @@ class ResidualMLP(torch.nn.Module):
 
             x = self.layers[i](x)
             x = self.dropout(x)
-
         x = self.norms[-1](x)
         return self.layers[-1](x)
     
@@ -303,10 +302,10 @@ class FusedMBConv1D(torch.nn.Module):
         """
         inputs = inputs.moveaxis(-1, 1)
         x = self.expand(inputs)
-        x = self.norm1(x)
+        x = self.norm1(x.moveaxis(1, -1)).moveaxis(-1, 1)
         x = self.activ(x)
         x = self.project(x)
-        x = self.norm2(x)
+        x = self.norm2(x.moveaxis(1, -1)).moveaxis(-1, 1)
         x = self.dropout(x)
 
         if self.res_con:
