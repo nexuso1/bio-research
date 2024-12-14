@@ -82,7 +82,7 @@ class EncoderClassifier(TokenClassifier):
         self.encoder = torch.nn.TransformerEncoder(enc_layer, config.n_layers)
 
         if config.sr_type == 'cnn':
-            self.create_sr_cnn()
+            self.create_sr_cnn() # Creates and initializes the seq. rep CNN
         
         # Create the residue representation CNN
         if config.cnn_type == 'basic':
@@ -94,12 +94,14 @@ class EncoderClassifier(TokenClassifier):
         self.classifier = ResidualMLP(self.config.mlp_layers,
                                        input_size=config.sr_dim, activation=torch.nn.ReLU(), norm=torch.nn.LayerNorm,
                                        dropout=config.dropout_rate)
-
+        
         # Initialize the modules
-        for module in self.modules():
+        init_list = [self.encoder, self.classifier, self.res_cnn]
+        for module in init_list:
             module.apply(self.xavier_init)
         
-        self.base = base_model
+        # Print info about this model
+        print(self)
     
     def create_sr_cnn(self):
         # Create sequence-representation CNN
@@ -116,6 +118,9 @@ class EncoderClassifier(TokenClassifier):
                 torch.nn.Linear(self.config.sr_cnn_layers[-1].out_channels, self.config.sr_dim),
                 torch.nn.ReLU()
             )
+        
+        # Initialize weights
+        self.seq_rep.apply(self.xavier_init)
         
     def get_mean_sequence_reps(self, sequence_output : torch.Tensor, batch_lens):
         # NOTE: token 0 is always a beginning-of-sequence token, so the first residue is token 1.

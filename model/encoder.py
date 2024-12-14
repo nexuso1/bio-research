@@ -33,6 +33,7 @@ def create_model(args):
                                     n_layers=args.n_layers, dropout_rate=args.dropout,
                                     sr_dim=args.encoder_dim,
                                     sr_cnn_layers=sr_cnn_layers,
+                                    sr_type=args.sr_type,
                                     res_cnn_layers=res_cnn_layers,
                                     cnn_type=args.cnn_type,
                                     encoder_dim=args.encoder_dim)
@@ -55,9 +56,11 @@ def add_arguments(parser : ArgumentParser):
     parser.add_argument('--sr_n', type=int, help='Number of seq. rep. CNN blocks', default=3)
     parser.add_argument('--sr_kernel_size', type=int, help='Seq. rep. kernel size', default=5)
     parser.add_argument('--sr_init_size', type=int, help='Initial dimension for the seq. rep. CNN', default=256)
-    parser.add_argument('--sr_final_size', type=int, help='Final dimension for the seq. rep. CNN', default=1024)
+    parser.add_argument('--sr_final_size', type=int, help='Final dimension for the seq. rep. CNN', default=512)
     parser.add_argument('--res_kernel_size', type=int, help='Residue representation kernel size', default=31)
+    parser.add_argument('--sr_type', type=str, help='Sequence representation type. Either "mean" or "cnn".', default='cnn')
     parser.add_argument('--encoder_dim', type=int, help='Classifier encoder dimension', default=256)
+    parser.add_argument('--expand', type=int, help='Expansion constant for fused mbconv', default=4)
 
 def main(args):
     run_training(args, create_model)
