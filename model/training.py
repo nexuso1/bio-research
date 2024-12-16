@@ -189,8 +189,9 @@ def create_loss(args):
     
 def train_model(args, train, dev, test, model, logdir):
     logger = TensorBoardLogger(logdir, name=f'tb_log')
-    chkpt_callback = ModelCheckpoint(logdir, filename='chkpt', monitor='val_f1')
-    es_callback = EarlyStopping('val_f1', patience=args.patience)
+    chkpt_callback = ModelCheckpoint(logdir, filename='chkpt', monitor='val_f1', mode='max',
+                                      save_on_train_epoch_end=1, auto_insert_metric_name=True)
+    es_callback = EarlyStopping('val_f1', patience=args.patience, mode="max")
 
     # Use deepspeed 
     if torch.cuda.device_count() > 1:
