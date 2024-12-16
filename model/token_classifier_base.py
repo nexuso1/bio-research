@@ -4,6 +4,7 @@ import lora
 import re
 from dataclasses import dataclass
 from typing import Callable
+from modules import CollapseAvoidLoss
 
 @dataclass
 class TokenClassifierConfig:
@@ -40,6 +41,7 @@ class TokenClassifier(nn.Module):
         self.n_labels = config.n_labels
         
         self.loss = config.loss
+        self.collapse_loss = CollapseAvoidLoss() # Used to prevent all 0 predicitions initially
 
     def save(self, path):
         torch.save({
@@ -64,8 +66,10 @@ class TokenClassifier(nn.Module):
                     param.requires_grad = True
 
         print('LoRA applied.')
-
-
+    
+    def collapse_prevention_loss(self, logits, min_std=0.1, mult=10):
+        std = torch.nn.std(logits)
+        
     def init_weights(self, module):
         for param in module.parameters():
             self.xavier_init(param)
@@ -127,7 +131,9 @@ class TokenClassifier(nn.Module):
                     loss = self.loss(valid_logits, valid_labels)
 
                 else:
+                    
                     loss = self.loss(logits.view(-1, self.n_labels), labels.view(-1))
+                    loss += self.collapse_loss(logits.view(-1, self.n_labels))
 
                 res = (loss, logits)
             

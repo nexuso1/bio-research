@@ -319,3 +319,19 @@ class FusedMBConv1D(torch.nn.Module):
             x = x + inputs
         
         return x.moveaxis(1, -1)
+    
+class CollapseAvoidLoss(torch.nn.Module):
+    """
+    Loss for prevention of initial gradient collapse while training Transformer models.
+    
+    source: https://yannikkeller.substack.com/p/solving-vanishing-gradients-from?r=3avwpj&utm_campaign=post&utm_medium=web&triedRedirect=true
+    """
+
+def __init__(self, min_std=0.1, factor=10):
+    self.min_std = min_std
+    self.factor = factor
+    super().__init__()
+    
+def forward(self, logits):
+    std = torch.std(torch.sigmoid(logits))
+    return torch.clamp((self.min_std - std) * self.factor, 0) 
