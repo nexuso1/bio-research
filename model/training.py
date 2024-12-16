@@ -156,6 +156,7 @@ class LightningWrapper(L.LightningModule):
     def configure_optimizers(self):
         optim = torch.optim.AdamW(self.classifier.parameters(), 
                                   lr=self.hparams.lr,
+                                  betas=(0.9, 0.98),
                                   weight_decay=self.hparams.weight_decay)
         schedule = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optim, T_0=self.ds_size)
         return {'optimizer' : optim, 'lr_scheduler' : { 
