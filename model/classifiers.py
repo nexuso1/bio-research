@@ -152,7 +152,7 @@ class EncoderClassifier(TokenClassifier):
         x = torch.cat([seq_rep.unsqueeze(1), proj], axis=1)
         x = x + self.pos_embed(x)
         x = self.encoder(x)
-        return self.classifier(x)[:, 1:], base_out
+        return self.classifier(x)[..., 1:], base_out
     
 class KinaseClassifier(EncoderClassifier):
     def __init__(self, config: KinaseClassfierConfig, base_model: Module) -> None:
@@ -160,7 +160,7 @@ class KinaseClassifier(EncoderClassifier):
         kinase_embeds = torch.load(config.kinase_emb_path)
         kinase_info = pd.read_csv(config.kinase_info_path)
         kinases = [v for k,v in kinase_embeds.items() if k in set(kinase_info['kinase_top1_id'])]
-        self.register_buffer('kinases', kinases)
+        self.register_buffer('kinases', kinases) 
 
     def forward(self, input_ids, attention_mask, **kwargs):
         base_out = self.base(input_ids=input_ids, attention_mask=attention_mask)
