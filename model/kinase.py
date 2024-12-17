@@ -1,21 +1,36 @@
-from classifiers import KinaseClassifier
+from classifiers import KinaseClassifier, KinaseClassifierConfig
 from esm_train import get_esm
+from encoder import setup_config
+from encoder import add_arguments as add_enc_args
 from training import run_training, parser, create_loss
 
-def create_model(args):
-    config = ...
 
+def create_model(args):
+    base, tokenizer = get_esm(args.type)
+    config = KinaseClassifierConfig(1, loss=create_loss(args), mlp_layers = [], res_cnn_layers=[], sr_cnn_layers=[])
+    setup_config(args, config, base.config)
+    
+    config.kinase_info_path = args.kinase_info_path
+    config.kinase_emb_path = args.kinase_emb_path
+    
+    classifier = KinaseClassifier(config, base)
+    if not args.lora:
+        classifier.set_base_requires_grad(False)
+
+    return classifier, tokenizer
+
+def add_arguments(parser):
+    add_enc_args(parser)
+    parser.add_argument('--kinase_info_path', type=str, help='Kinase info csv file path', default='../data/kinases_S.csv')
+    parser.add_argument('--kinase_emb_path', type=str,
+                        help='Precompute kinase embedding path. Formatted as dict(<id> : <embedding>)',
+                        default='../data/kinase_embeddings.pt')
 def main(args):
     run_training(args, create_model)
+    
 
 if __name__ == '__main__':
-    parser.add_argument('--cls_type', default='A', help='Kinase-aware classifier type',type=str)
-    parser.add_argument('--n_layers_mlp', type=int, help='Number of MLP classifier layers', default=3)
-    parser.add_argument('--block_size', type=int, help='Number of seq. rep. CNN layers in one block', default=2)
-    parser.add_argument('--sr_n', type=int, help='Number of seq. rep. CNN blocks', default=3)
-    parser.add_argument('--sr_kernel_size', type=int, help='Seq. rep. kernel size', default=5)
-    parser.add_argument('--sr_init_size', type=int, help='Initial dimension for the seq. rep. CNN', default=256)
-    parser.add_argument('--sr_final_size', type=int, help='Final dimension for the seq. rep. CNN', default=1024)
-    parser.add_argument('--encoder_dim', type=int, help='Classifier encoder dimension', default=256)
+    add_arguments(parser)
+
     args = parser.parse_args()
     main(args)
