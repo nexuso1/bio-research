@@ -52,8 +52,8 @@ class EncoderClassifierConfig(TokenClassifierConfig):
 
 @dataclass
 class KinaseClassfierConfig(EncoderClassifierConfig):
-    kinase_emb_path : str = ...
-    kinase_info_path : str = ...
+    kinase_emb_path : str = "../data/kinase_embeddings.pt"
+    kinase_info_path : str = "../data/kinases.jso"
 
 @dataclass
 class SelectiveFinetuningClassifierConfig(TokenClassifierConfig):
@@ -148,10 +148,10 @@ class EncoderClassifier(TokenClassifier):
         else:
             seq_rep = self.seq_rep(x)
         
-        #enc_mask = torch.cat([torch.ones(attention_mask.shape[0], 1, device=self.device), attention_mask], 1)
+        enc_mask = torch.cat([torch.ones(attention_mask.shape[0], 1, device=self.device), attention_mask], 1)
         x = torch.cat([seq_rep.unsqueeze(1), proj], axis=1)
         x = x + self.pos_embed(x)
-        x = self.encoder(x)
+        x = self.encoder(x,src_key_padding_mask=torch.bitwise_not(enc_mask.bool()))
         return self.classifier(x)[:, 1:], base_out
     
 class KinaseClassifier(EncoderClassifier):
@@ -175,7 +175,8 @@ class KinaseClassifier(EncoderClassifier):
 
         # src_key_padding_mask contains True if token i is padding, otherwise False
         x = self.encoder(x, src_key_padding_mask=torch.bitwise_not(enc_mask.bool()))
-        return self.classifier(x)[:, 1:], base_out
+        
+        return self.classifier(x)[:, len(self.kinases) + 1:], base_out
  
 class KinaseClassifierB(EncoderClassifier):
     def __init__(self, config: EncoderClassifierConfig, base_model: Module) -> None:
