@@ -3,7 +3,7 @@ from esm_train import get_esm
 from training import run_training, create_loss, parser
 
 def create_model(args):
-    conf = TokenClassifierConfig(1, loss = create_loss(args)) # ignored
+    conf = TokenClassifierConfig(1, loss = create_loss(args), base_type=args.type) # ignored
     base, tokenizer = get_esm(conf.base_type)
     classifier = UniPTM(conf, base, 1280, 8, 1, 128, 0.5, 3)
     classifier.set_base_requires_grad(False)
