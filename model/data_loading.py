@@ -148,8 +148,8 @@ def load_phospho_epsd(path : str):
 
     return res
 
-def prepare_datasets(args, tokenizer, ignore_label, return_datasets=False):
-    prot_info = load_prot_data(args.prot_info_path, residues=literal_eval(args.residues))
+def prepare_datasets(args, ignore_label):
+    prot_info = load_prot_data(args.prot_info_path, residues=literal_eval(args.residues), ignore_index=ignore_label)
     with open(args.dataset_path, 'r') as f:
         split_info = json.load(f)
     

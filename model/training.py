@@ -55,11 +55,12 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class LightningWrapper(L.LightningModule):
     def __init__(self, args, module : TokenClassifier, epoch_metrics : MetricCollection,
-                 step_metrics : MetricCollection, ds_size : int):
+                 step_metrics : MetricCollection, ds_size : int, logdir : str):
         super(LightningWrapper, self).__init__()
         self.classifier = module
         self.ds_size = ds_size
         self.step_metrics = step_metrics
+        self.logdir = logdir
         self.test_step_metrics = step_metrics.clone(prefix='test_') 
         self.val_step_metrics = step_metrics.clone(prefix='val_')
 
@@ -119,8 +120,8 @@ class LightningWrapper(L.LightningModule):
 
         if mode == 'test':
             preds, indices = zip(*self.test_preds)
-            torch.save(preds,f'{self.hparams.logdir}/preds.pt')
-            torch.save(indices,f'{self.hparams.logdir}/indices.pt')
+            torch.save(preds,f'{self.logdir}/preds.pt')
+            torch.save(indices,f'{self.logdir}/indices.pt')
 
         self.log_dict(epoch_metrics.compute(), prog_bar=True, logger=True, sync_dist=True)
         self.prc.compute()
@@ -145,13 +146,13 @@ class LightningWrapper(L.LightningModule):
         step_metrics.reset()
         self.prc.reset()
 
+        plt.close('all')
+
     def on_validation_epoch_end(self) -> None:
         self._shared_epoch_end('val')
 
     def on_test_epoch_end(self):
         self._shared_epoch_end('test')
-
-
 
     def configure_optimizers(self):
         optim = torch.optim.AdamW(self.classifier.parameters(), 
@@ -219,12 +220,8 @@ def get_tokenizer(args):
 
     return tokenizer
 
-def prepare_model(args, create_model_fn, **kwargs):
-    if args.checkpoint_path is not None:
-        # args, model, tokenizer = load_from_checkpoint(args.checkpoint_path, create_model_fn, **kwargs)
-        pass
-    else:
-        model, tokenizer = create_model_fn(args)
+def prepare_model(args, create_model_fn):
+    model, tokenizer = create_model_fn(args)
 
     return model, tokenizer
 
@@ -240,7 +237,7 @@ def run_training(args : Namespace, create_model_fn):
     
     tokenizer = get_tokenizer(args)
     
-    full_dataset = prepare_datasets(args, tokenizer, ignore_label=args.ignore_label)
+    full_dataset = prepare_datasets(args, ignore_label=args.ignore_label)
 
     step_metrics = MetricCollection({
         'f1' : F1Score(task='binary', ignore_index=args.ignore_label),
@@ -265,12 +262,14 @@ def run_training(args : Namespace, create_model_fn):
         meta.save(args.logdir)
     else:
         par_dir = Path(args.checkpoint_path).parent
+        chkpt_path = args.checkpoint_path
         with open(f'{par_dir.parent}/metadata.json', 'r') as f:
             meta = Metadata(**json.load(f))
             if 'current_fold' not in meta.data:
                 meta.data['current_fold'] = int(par_dir.name[-1])
             for k, v in meta.data['args'].items():
                 args.__setattr__(k, v)
+        args.checkpoint_path = chkpt_path
 
     master_logdir = args.logdir
     metric_hist = {}
@@ -294,11 +293,11 @@ def run_training(args : Namespace, create_model_fn):
                             persistent_workers=True if args.num_workers > 0 else False,
                             num_workers=args.num_workers)
         
-        model, tokenizer = prepare_model(args, create_model_fn, epoch_metrics=epoch_metrics, step_metrics=step_metrics, ds_size=len(train))
+        model, tokenizer = prepare_model(args, create_model_fn)
 
         logdir = os.path.join(master_logdir, f'fold_{i}')
         if not isinstance(model, LightningWrapper):
-            model = LightningWrapper(args, model, step_metrics=step_metrics, epoch_metrics=epoch_metrics, ds_size=len(train))
+            model = LightningWrapper(args, model, step_metrics=step_metrics, epoch_metrics=epoch_metrics, ds_size=len(train), logdir=logdir)
 
         if args.compile:
             # Compile the model, useful in general on Ampere architectures and further
