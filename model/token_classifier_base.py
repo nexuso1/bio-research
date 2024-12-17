@@ -41,7 +41,7 @@ class TokenClassifier(nn.Module):
         self.n_labels = config.n_labels
         
         self.loss = config.loss
-        self.collapse_loss = CollapseAvoidLoss() # Used to prevent all 0 predicitions initially
+        # self.collapse_loss = CollapseAvoidLoss() # Used to prevent all 0 predicitions initially
 
     def save(self, path):
         torch.save({
@@ -132,8 +132,7 @@ class TokenClassifier(nn.Module):
 
                 else:
                     
-                    loss = self.loss(logits.view(-1, self.n_labels), labels.view(-1))
-                    loss += self.collapse_loss(logits.view(-1, self.n_labels))
+                    loss = self.loss(logits.reshape(-1, self.n_labels), labels.reshape(-1))
 
                 res = (loss, logits)
             
@@ -165,6 +164,7 @@ class TokenClassifier(nn.Module):
             valid_logits=active_logits[active_loss].flatten()
             valid_labels=labels.view(-1)[active_loss]
             loss = self.loss(valid_logits, valid_labels)
+            # loss += self.collapse_loss(valid_logits)
             
         else:
             loss = self.loss(logits.view(-1, self.n_labels), labels.view(-1))

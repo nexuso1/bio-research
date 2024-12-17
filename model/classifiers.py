@@ -51,9 +51,9 @@ class EncoderClassifierConfig(TokenClassifierConfig):
 
 
 @dataclass
-class KinaseClassfierConfig(EncoderClassifierConfig):
-    kinase_emb_path : str = ...
-    kinase_info_path : str = ...
+class KinaseClassifierConfig(EncoderClassifierConfig):
+    kinase_info_path : str = '../data/kinases_S.csv'
+    kinase_emb_path : str = '../data/kinase_embeddings.pt'
 
 @dataclass
 class SelectiveFinetuningClassifierConfig(TokenClassifierConfig):
@@ -148,34 +148,50 @@ class EncoderClassifier(TokenClassifier):
         else:
             seq_rep = self.seq_rep(x)
         
-        #enc_mask = torch.cat([torch.ones(attention_mask.shape[0], 1, device=self.device), attention_mask], 1)
+        enc_mask = torch.cat([torch.ones(attention_mask.shape[0], 1, device=self.device), attention_mask], 1)
         x = torch.cat([seq_rep.unsqueeze(1), proj], axis=1)
         x = x + self.pos_embed(x)
-        x = self.encoder(x)
-        return self.classifier(x)[..., 1:], base_out
+        x = self.encoder(x,src_key_padding_mask=torch.bitwise_not(enc_mask.bool()))
+        return self.classifier(x)[:, 1:], base_out
     
 class KinaseClassifier(EncoderClassifier):
-    def __init__(self, config: KinaseClassfierConfig, base_model: Module) -> None:
+    def __init__(self, config: KinaseClassifierConfig, base_model: Module) -> None:
         super().__init__(config, base_model)
-        kinase_embeds = torch.load(config.kinase_emb_path)
-        kinase_info = pd.read_csv(config.kinase_info_path)
-        kinases = [v for k,v in kinase_embeds.items() if k in set(kinase_info['kinase_top1_id'])]
-        self.register_buffer('kinases', kinases) 
+        self.load_kinases()
+        self.pos_embed = SinPositionalEncoding(config.encoder_dim, 1024 + config.sr_n_tokens + self.kinases.shape[0])
 
+    def load_kinases(self):
+        kinase_embeds = torch.load(self.config.kinase_emb_path)
+        kinase_info = pd.read_csv(self.config.kinase_info_path)
+        self.kinase_ids = kinase_info['kinase_top1_id'].to_list()
+        with torch.no_grad():
+            kinases = [kinase_embeds[k] for k in self.kinase_ids]
+            # Find the maximum length
+            max_length = max(tensor.size(0) for tensor in kinases)
+            # Pad each tensor to the maximum length
+            padded = [torch.nn.functional.pad(tensor, (0, 0, 0,  max_length - tensor.size(0)), "constant", 0) for tensor in kinases]
+            # Convert list to a single tensor
+            kinases = torch.stack(padded)
+            
+        self.register_buffer('kinases', kinases)
+        
     def forward(self, input_ids, attention_mask, **kwargs):
         base_out = self.base(input_ids=input_ids, attention_mask=attention_mask)
         x = base_out[0]
         proj = self.res_cnn(x)
 
-        seq_rep = self.seq_rep(seq_rep)
-        kinase_reps = self.seq_rep(self.kinases)
-        enc_mask = torch.cat([torch.ones(attention_mask.shape[0], 2, device=self.device), attention_mask], 1)
-        x = torch.cat([kinase_reps, seq_rep.unsqueeze(1), proj], axis=1)
+        seq_rep = self.seq_rep(x).unsqueeze(1) # B, 1, CH
+        kinase_reps = self.seq_rep(self.kinases).unsqueeze(0) # 1, N_kinases, CH
+        kinase_reps = kinase_reps.expand(seq_rep.size(0), -1, seq_rep.size(-1)) # B, N_kinases, CH
+        reps = torch.cat([kinase_reps, seq_rep], axis=1) # B, N_kinases + 1, CH
+        enc_mask = torch.cat([torch.ones(attention_mask.shape[0], reps.shape[1], device=self.device), attention_mask], 1)
+        x = torch.cat([reps, proj], axis=1)
         x = x + self.pos_embed(x)
 
         # src_key_padding_mask contains True if token i is padding, otherwise False
         x = self.encoder(x, src_key_padding_mask=torch.bitwise_not(enc_mask.bool()))
-        return self.classifier(x)[:, 1:], base_out
+        
+        return self.classifier(x)[:, reps.shape[1]:], base_out
  
 class KinaseClassifierB(EncoderClassifier):
     def __init__(self, config: EncoderClassifierConfig, base_model: Module) -> None:
@@ -194,7 +210,7 @@ class KinaseClassifierB(EncoderClassifier):
         proj = self.res_cnn(x)
         seq_rep = self.sr_cnn(x)
         seq_rep = self.seq_rep(seq_rep)
-        kinase_reps = self.seq_rep(self.kinases)
+        kinase_reps = self.seq_rep(self.kinases).unsqueeze(0).expand(seq_rep.size(0), -1, seq_rep.size(1))
         kinase_mask = torch.nn.Softmax(self.kinase_gate(kinase_reps))
         kinase_token = kinase_reps * kinase_mask
         enc_mask = torch.cat([torch.ones(attention_mask.shape[0], 2, device=self.device), attention_mask], 1)
