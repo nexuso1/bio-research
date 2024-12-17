@@ -4,11 +4,10 @@ from training import run_training, parser, create_loss
 from esm_train import get_esm
 import numpy as np
 
-def create_model(args):
-    base, tokenizer = get_esm(args.type)
+def setup_config(args, config, base_config):
     mlp_layers = [args.hidden_size for _ in range(args.n_layers_mlp)] + [1]
     sr_sizes = 2 ** np.linspace(np.log2(args.sr_init_size), np.log2(args.sr_final_size), args.sr_n)
-    base_size = base.config.hidden_size
+    base_size = base_config.hidden_size
 
     if args.cnn_type == 'basic':
         # First layer
@@ -29,15 +28,23 @@ def create_model(args):
             for i in range(args.sr_n - 1)]
         res_cnn_layers = [FusedMBConvConfig(base_size, args.encoder_dim, args.res_kernel_size, 1, 1, args.expand)]
     
-    conf = EncoderClassifierConfig(1, loss = create_loss(args), mlp_layers=mlp_layers,
-                                    n_layers=args.n_layers, dropout_rate=args.dropout,
-                                    sr_dim=args.encoder_dim,
-                                    sr_cnn_layers=sr_cnn_layers,
-                                    sr_type=args.sr_type,
-                                    res_cnn_layers=res_cnn_layers,
-                                    cnn_type=args.cnn_type,
-                                    encoder_dim=args.encoder_dim,
-                                    ffw_dim=args.ffw_dim)
+    config.mlp_layers = mlp_layers
+    config.sr_cnn_layers = sr_cnn_layers
+    config.res_cnn_layers = res_cnn_layers
+    config.n_layers = args.n_layers
+    config.dropout_rate = args.dropout
+    config.sr_dim = args.encoder_dim
+    config.sr_type = args.sr_type
+    config.cnn_type = args.cnn_type
+    config.encoder_dim = args.encoder_dim
+    config.ffw_dim = args.ffw_dim
+    
+    return config
+
+def create_model(args):
+    base, tokenizer = get_esm(args.type)
+    conf = EncoderClassifierConfig(1, loss = create_loss(args), mlp_layers=[], sr_cnn_layers=[], res_cnn_layers=[])
+    setup_config(args, conf, base.config)
     
     classifier = EncoderClassifier(conf, base)
  
