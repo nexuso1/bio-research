@@ -136,7 +136,7 @@ class LightningWrapper(L.LightningModule):
         im = ToTensor()(Image.open(buf))
 
         self.logger.experiment.add_image(
-            "val_prc",
+            "test_prc",
             im,
             global_step=self.current_epoch,
         )
