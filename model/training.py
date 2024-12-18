@@ -21,6 +21,7 @@ from data_loading import prepare_datasets
 from transformers import AutoTokenizer
 from pathlib import Path
 from argparse import Namespace, ArgumentParser
+from sklearn.metrics import average_precision_score
 
 parser = ArgumentParser()
 
@@ -74,15 +75,16 @@ class LightningWrapper(L.LightningModule):
         self.save_hyperparameters(args)
 
     def _compute_metrics_step(self, logits, labels, step_metrics, epoch_metrics):
-        step_metrics.update(logits, labels)
+        step_vals = step_metrics(logits, labels)
         epoch_metrics.update(logits, labels.int())
         self.prc.update(logits, labels.int())
-        self.log_dict(step_metrics.compute(), logger=True, sync_dist=True, prog_bar=True)
+        self.log_dict(step_vals, sync_dist=True, prog_bar=True, logger=True)
 
     def training_step(self, batch, batch_idx):
         loss, logits = self.classifier.train_predict(**batch)
-        self.loss_metric.update(loss)
-        self.log('train_loss', self.loss_metric.compute(), logger=True, sync_dist=True, prog_bar=True)
+        mean_loss = self.loss_metric(loss)
+        self.log('train_loss', loss, logger=True, prog_bar=True, sync_dist=True)
+        self.log('train_loss_mean', mean_loss, logger=True, sync_dist=True, prog_bar=True)
         self._compute_metrics_step(logits.reshape(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels),
                                    self.step_metrics, self.epoch_metrics)
 
@@ -90,16 +92,18 @@ class LightningWrapper(L.LightningModule):
     
     def validation_step(self, batch, batch_idx):
         loss, logits = self.classifier.predict(**batch)
-        self.loss_metric.update(loss)
-        self.log('val_loss', self.loss_metric.compute(), logger=True, prog_bar=True, sync_dist=True)
+        mean_loss = self.loss_metric(loss)
+        self.log('val_loss', loss, logger=True, prog_bar=True, sync_dist=True)
+        self.log('val_loss_mean', mean_loss, logger=True, prog_bar=True, sync_dist=True)
         self._compute_metrics_step(logits.reshape(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels), 
                                    self.val_step_metrics, self.val_epoch_metrics)
     
     def test_step(self, batch, batch_idx):
         loss, logits = self.classifier.predict(**batch)
         self.test_preds.append((logits.squeeze(), batch['indices'].squeeze()))
-        self.loss_metric.update(loss)
-        self.log('test_loss', self.loss_metric.compute(), logger=True, prog_bar=True, sync_dist=True)
+        mean_loss = self.loss_metric(loss)
+        self.log('test_loss', loss, logger=True, prog_bar=True, sync_dist=True)
+        self.log('test_loss_mean', mean_loss, logger=True, prog_bar=True, sync_dist=True)
         self._compute_metrics_step(logits.reshape(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels), 
                                    self.test_step_metrics, self.test_epoch_metrics)
 
@@ -122,9 +126,8 @@ class LightningWrapper(L.LightningModule):
             preds, indices = zip(*self.test_preds)
             torch.save(preds,f'{self.logdir}/preds.pt')
             torch.save(indices,f'{self.logdir}/indices.pt')
-
+        
         self.log_dict(epoch_metrics.compute(), prog_bar=True, logger=True, sync_dist=True)
-        self.prc.compute()
 
         fig, ax = plt.subplots(figsize=(10, 10))
 
@@ -136,7 +139,7 @@ class LightningWrapper(L.LightningModule):
         im = ToTensor()(Image.open(buf))
 
         self.logger.experiment.add_image(
-            "val_prc",
+            f"{mode}_prc",
             im,
             global_step=self.current_epoch,
         )
