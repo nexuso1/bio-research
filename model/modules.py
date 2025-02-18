@@ -7,7 +7,7 @@ from typing import Optional
 
 class EncoderLayerAttnOutput(torch.nn.TransformerEncoderLayer):
     def __init__(self, *args, **kwargs):
-        super(FixedEncoderLayer, self).__init__(*args, **kwargs)
+        super(EncoderLayerAttnOutput, self).__init__(*args, **kwargs)
         self.last_attn_weights = 0 
         
     # self-attention block
