@@ -274,6 +274,7 @@ def run_training(args : Namespace, create_model_fn):
         meta = Metadata()
         meta.data = {'args' : args }
         meta.data['current_fold'] = 0
+        meta.data['test_metrics'] = []
         meta.save(args.logdir)
     else:
         par_dir = Path(args.checkpoint_path).parent
@@ -287,7 +288,6 @@ def run_training(args : Namespace, create_model_fn):
         args.checkpoint_path = chkpt_path
 
     master_logdir = args.logdir
-    metric_hist = {}
     for i in range(meta.data['current_fold'], full_dataset.n_splits):
         meta.data['current_fold'] = i
         meta.save(master_logdir)
@@ -325,16 +325,28 @@ def run_training(args : Namespace, create_model_fn):
         training_model, test_metrics = train_model(args, train, dev, test, training_model, logdir)
         monitor_metric = 'test_f1'
         monitor_best_val = 0
+        meta.data['test_metrics'].append(test_metrics[0])
 
-        if len(metric_hist.keys()) == 0:
-            metric_hist = test_metrics[0]
-        
-        print(f'Test metric averages after epoch {i}')
-        for metric in metric_hist:
-            metric_hist[metric] += test_metrics[0][metric]
-            print(f'{metric}: {metric_hist[metric] / (i + 1)}')
+        print(f'Test metrics for fold {i}')
+        print(meta.data['test_metrics'][i])
 
         if monitor_best_val > test_metrics[0][monitor_metric]:
             monitor_best_val = test_metrics[0][monitor_metric]
             save_model(args, model, args.n)
+
+        meta.save(master_logdir)
+
+    print('Overall test metric averages')
+    buffer = {k : 0 for k in meta.data['test_metrics'][-1].keys()}
+    for i in range(len(meta.data['test_metrics'])):
+        fold_metrics = meta.data['test_metrics'][i]
+        for k, v in fold_metrics.items():
+            buffer[k] += v
+
+    for k, v in buffer.items():
+        buffer[k] = v / len(meta.data['test_metrics'])
+        print(f'mean {k} : {buffer[k]}')
+
+    meta.data['test_metric_avg'] = buffer
+    meta.save(master_logdir)
     return model
