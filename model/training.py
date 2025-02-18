@@ -92,13 +92,15 @@ class LightningWrapper(L.LightningModule):
         self._compute_metrics_step(logits.reshape(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels),
                                    self.step_metrics, self.epoch_metrics)
         
-        if self.debug and self.print_counter >= 250:
-            with torch.no_grad():
-                #print(batch)
-                print(torch.sigmoid(logits))
-            self.print_counter = 0
+        if self.debug:
+            if self.print_counter >= 250:
+                with torch.no_grad():
+                    print(batch)
+                    print(torch.sigmoid(logits))
+                self.print_counter = 0
             
-        self.print_counter += 1
+            self.print_counter += 1
+
         return loss
     
     def validation_step(self, batch, batch_idx):
