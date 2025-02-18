@@ -47,7 +47,7 @@ class EncoderClassifierConfig(TokenClassifierConfig):
             ConvLayerConfig(1280, 256, 31, 1, 1),
         ])
     
-    mlp_layers : list[int] = field(default_factory=lambda : [256, 256, 256, 1])
+    mlp_layers : list[int] = field(default_factory=lambda : [256, 256, 256])
 
 
 @dataclass
@@ -92,10 +92,11 @@ class EncoderClassifier(TokenClassifier):
             self.res_cnn = FusedMBConv1dModel(config.res_cnn_layers, pool=False, dropout=0)
 
         # Create a residual MLP classifier
-        self.classifier = ResidualMLP(self.config.mlp_layers,
+        self.classifier_mlp = ResidualMLP(self.config.mlp_layers,
                                        input_size=config.encoder_dim, activation=torch.nn.ReLU(), norm=torch.nn.LayerNorm,
                                        dropout=config.dropout_rate)
         
+        self.classifier = torch.nn.Sequential(self.classifier_mlp, torch.nn.Linear(self.config.mlp_layers[-1], self.config.n_labels))
         # Initialize the modules
         init_list = [self.encoder, self.classifier, self.res_cnn]
         for module in init_list:
@@ -149,9 +150,18 @@ class EncoderClassifier(TokenClassifier):
             seq_rep = self.seq_rep(x)
         
         enc_mask = torch.cat([torch.ones(attention_mask.shape[0], 1, device=self.device), attention_mask], 1)
-        x = torch.cat([seq_rep.unsqueeze(1), proj], axis=1)
+        if len(proj.shape) < 3:
+            proj = proj.unsqueeze(0)
+            seq_rep = seq_rep.unsqueeze(0)
+        x = torch.cat([seq_rep.unsqueeze(1) , proj], axis=1)
         x = x + self.pos_embed(x)
-        x = self.encoder(x,src_key_padding_mask=torch.bitwise_not(enc_mask.bool()))
+        if 'no_flash_attn' in kwargs and kwargs['no_flash_attn']:
+            # Transform the inputs to sequence-first. Expecting batch size of 1
+            x = x.moveaxis(0, 1).squeeze()
+            x = self.encoder(x)
+            x = x.unsqueeze(0)
+        else:
+            x = self.encoder(x,src_key_padding_mask=torch.bitwise_not(enc_mask.bool()))
         return self.classifier(x)[:, 1:], base_out
     
 class KinaseClassifier(EncoderClassifier):
