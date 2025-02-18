@@ -21,7 +21,6 @@ from data_loading import prepare_datasets
 from transformers import AutoTokenizer
 from pathlib import Path
 from argparse import Namespace, ArgumentParser
-from sklearn.metrics import average_precision_score
 
 parser = ArgumentParser()
 
