@@ -5,7 +5,7 @@ from esm_train import get_esm
 import numpy as np
 
 def setup_config(args, config, base_config):
-    mlp_layers = [args.hidden_size for _ in range(args.n_layers_mlp)] + [1]
+    mlp_layers = [args.hidden_size for _ in range(args.n_layers_mlp)]
     sr_sizes = 2 ** np.linspace(np.log2(args.sr_init_size), np.log2(args.sr_final_size), args.sr_n)
     base_size = base_config.hidden_size
 

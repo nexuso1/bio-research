@@ -50,6 +50,7 @@ parser.add_argument('--focal', help='Use focal loss. In this mode, pos_weight wi
 parser.add_argument('--residues', help='List of residues to train on', default="['S', 'T', 'Y']", type=str)
 parser.add_argument('--ignore_label', help='Label that will be ignored by the loss', default=-1, type=int)
 parser.add_argument('--patience', help='Patience during training', default=20, type=int)
+parser.add_argument('--debug', help='Debug mode', default=False, action='store_true')
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -71,6 +72,11 @@ class LightningWrapper(L.LightningModule):
         self.loss_metric = MeanMetric()
         self.prc = PrecisionRecallCurve('binary', ignore_index=self.classifier.ignore_index)
         self.test_preds = []
+        self.debug = False
+        if hasattr(args, "debug") and args.debug:
+            self.debug = True
+            self.print_counter = 0
+            
         self.save_hyperparameters(args)
 
     def _compute_metrics_step(self, logits, labels, step_metrics, epoch_metrics):
@@ -83,17 +89,22 @@ class LightningWrapper(L.LightningModule):
         loss, logits = self.classifier.train_predict(**batch)
         mean_loss = self.loss_metric(loss)
         self.log('train_loss', loss, logger=True, prog_bar=True, sync_dist=True)
-        self.log('train_loss_mean', mean_loss, logger=True, sync_dist=True, prog_bar=True)
         self._compute_metrics_step(logits.reshape(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels),
                                    self.step_metrics, self.epoch_metrics)
-
+        
+        if self.debug and self.print_counter >= 250:
+            with torch.no_grad():
+                #print(batch)
+                print(torch.sigmoid(logits))
+            self.print_counter = 0
+            
+        self.print_counter += 1
         return loss
     
     def validation_step(self, batch, batch_idx):
         loss, logits = self.classifier.predict(**batch)
         mean_loss = self.loss_metric(loss)
         self.log('val_loss', loss, logger=True, prog_bar=True, sync_dist=True)
-        self.log('val_loss_mean', mean_loss, logger=True, prog_bar=True, sync_dist=True)
         self._compute_metrics_step(logits.reshape(-1, self.classifier.n_labels), batch['labels'].view(-1, self.classifier.n_labels), 
                                    self.val_step_metrics, self.val_epoch_metrics)
     

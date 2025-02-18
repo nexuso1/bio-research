@@ -2,6 +2,34 @@ import torch
 import torch.utils
 import math
 from dataclasses import dataclass
+from torch import Tensor
+from typing import Optional
+
+class EncoderLayerAttnOutput(torch.nn.TransformerEncoderLayer):
+    def __init__(self, *args, **kwargs):
+        super(FixedEncoderLayer, self).__init__(*args, **kwargs)
+        self.last_attn_weights = 0 
+        
+    # self-attention block
+    def _sa_block(
+        self,
+        x: Tensor,
+        attn_mask: Optional[Tensor],
+        key_padding_mask: Optional[Tensor],
+        is_causal: bool = False,
+    ) -> Tensor:
+        x, attn_weights = self.self_attn(
+            x,
+            x,
+            x,
+            attn_mask=attn_mask,
+            key_padding_mask=key_padding_mask,
+            need_weights=True,
+            is_causal=is_causal,
+        )
+        
+        self.last_attn_weight = attn_weights
+        return self.dropout1(x)
 
 def keras_init(module):
     """Initialize weights using the Keras defaults."""
