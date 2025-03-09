@@ -248,7 +248,7 @@ def run_training(args : Namespace, create_model_fn):
             datetime.datetime.now().strftime("%Y_%m_%d_%H%M%S"),
         )
 
-    args.logdir = os.path.join("logs", log_dirname)
+    args.logdir = os.path.join("new_logs", log_dirname)
     
     tokenizer = get_tokenizer(args)
     
