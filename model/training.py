@@ -327,7 +327,8 @@ def run_training(args : Namespace, create_model_fn):
 
         print(f'Test metrics for fold {i}')
         print(meta.data['test_metrics'][i])
-        save_model(args, model, args.n)
+        # Handled by checkpoints
+        #save_model(args, model, args.n)
 
         meta.save(master_logdir)
 
