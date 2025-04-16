@@ -40,7 +40,8 @@ def labeling_fn(row, buffer, residues={'S', 'T', 'Y'}, ignore_index=-1):
     res = np.zeros(len(row['sequence']), dtype=np.uint8) + ignore_index
     mask = [s in residues for s in row['sequence']] # Only relevant prots are not ignored
     res[mask] = 0
-    res[row['sites']] = 1
+    valid_sites = [i for i in row['sites'] if row['sequence'][i] in residues]
+    res[valid_sites] = 1
 
     buffer.append(res)
 
