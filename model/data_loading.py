@@ -36,14 +36,14 @@ def load_phoshpolingo_dataset(path, train_valid_test, batch_size, tokenizer, num
     return DataLoader(dataset, batch_size=batch_size, collate_fn=partial(prep_pl_batch, tokenizer=tokenizer),
                       persistent_workers=True if num_workers > 0 else False, num_workers=num_workers, shuffle=shuffle)
 
-def labeling_fn(row, buffer, residues={'S', 'T', 'Y'}, ignore_index=-1):
+def labeling_fn(row, residues={'S', 'T', 'Y'}, ignore_index=-1):
     res = np.zeros(len(row['sequence']), dtype=np.uint8) + ignore_index
     mask = [s in residues for s in row['sequence']] # Only relevant prots are not ignored
     res[mask] = 0
     valid_sites = [i for i in row['sites'] if row['sequence'][i] in residues]
     res[valid_sites] = 1
 
-    buffer.append(res)
+    return res
 
 def load_prot_data(dataset_path, residues={'S', 'T', 'Y'}, ignore_index=-1):
     """
@@ -52,9 +52,8 @@ def load_prot_data(dataset_path, residues={'S', 'T', 'Y'}, ignore_index=-1):
     """
     df = pd.read_json(dataset_path)
     df = df.dropna()
-    df['sites'] = df['sites'].apply(lambda x: [eval(i) - 1 for i in x])
-    labels = []
-    df.apply(partial(labeling_fn, buffer=labels, residues=residues, ignore_index=ignore_index), axis=1)
+    df['sites'] = df['sites'].apply(lambda x: [int(i) - 1 for i in x])
+    labels = df.apply(partial(labeling_fn, residues=residues, ignore_index=ignore_index), axis=1)
     df['label'] = labels
     
     return df[['id', 'sequence', 'label']]

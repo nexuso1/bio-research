@@ -323,16 +323,11 @@ def run_training(args : Namespace, create_model_fn):
             training_model = model.to(device)
     
         training_model, test_metrics = train_model(args, train, dev, test, training_model, logdir)
-        monitor_metric = 'test_f1'
-        monitor_best_val = 0
         meta.data['test_metrics'].append(test_metrics[0])
 
         print(f'Test metrics for fold {i}')
         print(meta.data['test_metrics'][i])
-
-        if monitor_best_val > test_metrics[0][monitor_metric]:
-            monitor_best_val = test_metrics[0][monitor_metric]
-            save_model(args, model, args.n)
+        save_model(args, model, args.n)
 
         meta.save(master_logdir)
 
