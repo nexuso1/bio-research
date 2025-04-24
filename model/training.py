@@ -176,8 +176,8 @@ class LightningWrapper(L.LightningModule):
                                   betas=(0.9, 0.98),
                                   weight_decay=self.hparams.weight_decay)
         if self.hparams.step_lr:
-            # UniPTM setup
-            schedule = torch.optim.lr_scheduler.StepLR(optim, step_size=20,gamma=0.92)
+            # Needed for UniPTM training
+            schedule = torch.optim.lr_scheduler.StepLR(optim, step_size=20, gamma=0.92)
         else:
             schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=self.hparams.epochs)
         return {'optimizer' : optim, 'lr_scheduler' : { 
