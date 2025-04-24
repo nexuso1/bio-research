@@ -51,6 +51,7 @@ parser.add_argument('--residues', help='List of residues to train on', default="
 parser.add_argument('--ignore_label', help='Label that will be ignored by the loss', default=-1, type=int)
 parser.add_argument('--patience', help='Patience during training', default=20, type=int)
 parser.add_argument('--debug', help='Debug mode', default=False, action='store_true')
+parser.add_argument('--step_lr', help='Use StepLR scheduler', default=False, action='store_true')
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -174,9 +175,14 @@ class LightningWrapper(L.LightningModule):
                                   lr=self.hparams.lr,
                                   betas=(0.9, 0.98),
                                   weight_decay=self.hparams.weight_decay)
-        schedule = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optim, T_0=self.ds_size)
+        if self.hparams.step_lr:
+            # UniPTM setup
+            schedule = torch.optim.lr_scheduler.StepLR(optim, step_size=20,gamma=0.92)
+        else:
+            schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=self.hparams.epochs)
         return {'optimizer' : optim, 'lr_scheduler' : { 
             "scheduler" : schedule,
+            "interval": "epoch",
             "monitor" : "train_loss",
             "frequency" : 1
         }}
