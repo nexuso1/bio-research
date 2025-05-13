@@ -212,8 +212,12 @@ def create_loss(args):
     
 def train_model(args, train, dev, test, model, logdir):
     logger = TensorBoardLogger(logdir, name=f'tb_log')
-    chkpt_callback = ModelCheckpoint(logdir, filename='chkpt', monitor='val_f1', mode='max',
+
+    # Best model checkpoint
+    best_callback = ModelCheckpoint(logdir, filename='best', monitor='val_f1', mode='max',
                                       save_on_train_epoch_end=1, auto_insert_metric_name=True)
+    # Training checkpoint (because having a defined ModelCheckpoint overrides the default checkpointing)
+    chkpt_callback = ModelCheckpoint(logdir, filename='chkpt')
     es_callback = EarlyStopping('val_f1', patience=args.patience, mode="max")
 
     # Use deepspeed 
@@ -221,8 +225,9 @@ def train_model(args, train, dev, test, model, logdir):
         strategy = "deepspeed_stage_2"
     else:
         strategy = "auto"
-    trainer = L.Trainer(logger=logger, callbacks=[chkpt_callback, es_callback], max_epochs=args.epochs,
-                        deterministic=True, log_every_n_steps=1,  accumulate_grad_batches=args.accum, strategy=strategy)
+    trainer = L.Trainer(logger=logger, callbacks=[best_callback, es_callback, chkpt_callback], max_epochs=args.epochs,
+                        deterministic=True, log_every_n_steps=1,  accumulate_grad_batches=args.accum, strategy=strategy,
+                        default_root_dir=logdir)
     trainer.fit(model, train, dev, ckpt_path=args.checkpoint_path)
     test_metrics = trainer.test(model, test)
     print(test_metrics)
