@@ -343,6 +343,9 @@ def run_training(args : Namespace, create_model_fn):
         # Handled by checkpoints
         #save_model(args, model, args.n)
 
+        if args.checkpoint_path:
+            # Clear the checkpoint after resuming
+            args.checkpoint_path = None
         meta.save(master_logdir)
 
     print('Overall test metric averages')
