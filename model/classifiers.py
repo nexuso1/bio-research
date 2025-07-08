@@ -54,7 +54,8 @@ class EncoderClassifierConfig(TokenClassifierConfig):
 class KinaseClassifierConfig(EncoderClassifierConfig):
     kinase_info_path : str = '../data/kinases_S.csv'
     kinase_emb_path : str = '../data/kinase_embeddings.pt'
-
+    kinase_transform : bool = False 
+    nl_transform : bool = False # Use non-linear kinase transform
 @dataclass
 class SelectiveFinetuningClassifierConfig(TokenClassifierConfig):
     unfreeze_indices : list[int] = field(default_factory= lambda : [-1])
@@ -168,6 +169,15 @@ class KinaseClassifier(EncoderClassifier):
     def __init__(self, config: KinaseClassifierConfig, base_model: Module) -> None:
         super().__init__(config, base_model)
         self.load_kinases()
+        if config.kinase_transform:
+            # Create the kinase transform layer
+            self.kt_layer = torch.nn.Sequential(torch.nn.LazyLinear(self.config.sr_dim))
+            if config.nl_transform:
+                # Add non-linearity with normalization
+                self.kt_layer.append(torch.nn.LayerNorm(self.config.sr_dim))
+                self.kt_layer.append(torch.nn.ReLU())
+                self.kt_layer.append(torch.nn.LazyLinear())
+        
         self.pos_embed = SinPositionalEncoding(config.encoder_dim, 1024 + config.sr_n_tokens + self.kinases.shape[0])
 
     def load_kinases(self):
@@ -182,7 +192,7 @@ class KinaseClassifier(EncoderClassifier):
             padded = [torch.nn.functional.pad(tensor, (0, 0, 0,  max_length - tensor.size(0)), "constant", 0) for tensor in kinases]
             # Convert list to a single tensor
             kinases = torch.stack(padded)
-            
+        
         self.register_buffer('kinases', kinases)
         
     def forward(self, input_ids, attention_mask, **kwargs):
@@ -193,6 +203,8 @@ class KinaseClassifier(EncoderClassifier):
         seq_rep = self.seq_rep(x).unsqueeze(1) # B, 1, CH
         kinase_reps = self.seq_rep(self.kinases).unsqueeze(0) # 1, N_kinases, CH
         kinase_reps = kinase_reps.expand(seq_rep.size(0), -1, seq_rep.size(-1)) # B, N_kinases, CH
+        if self.config.nl_transform:
+            kinase_reps = self.kt_layer(kinase_reps)
         reps = torch.cat([kinase_reps, seq_rep], axis=1) # B, N_kinases + 1, CH
         enc_mask = torch.cat([torch.ones(attention_mask.shape[0], reps.shape[1], device=self.device), attention_mask], 1)
         x = torch.cat([reps, proj], axis=1)
@@ -347,7 +359,7 @@ class RNNTokenClassifier(TokenClassifier):
         return self.classifier(classifier_features, lengths=torch.sum(attention_mask, -1)), outputs
     
 class SelectiveFinetuningClassifier(TokenClassifier):
-    def __init__(self, config: SelectiveFinetuningClassifierConfig, base_model: Module, ) -> None:
+    def __init__(self, config: SelectiveFinetuningClassifierConfig, base_model: Module) -> None:
         super().__init__(config, base_model)
         self.classifier = torch.nn.Linear(base_model.config.hidden_size, config.n_labels)
         self.init_weights(self.classifier)
