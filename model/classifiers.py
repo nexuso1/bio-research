@@ -203,7 +203,7 @@ class KinaseClassifier(EncoderClassifier):
         seq_rep = self.seq_rep(x).unsqueeze(1) # B, 1, CH
         kinase_reps = self.seq_rep(self.kinases).unsqueeze(0) # 1, N_kinases, CH
         kinase_reps = kinase_reps.expand(seq_rep.size(0), -1, seq_rep.size(-1)) # B, N_kinases, CH
-        if self.config.nl_transform:
+        if self.config.kinase_transform:
             kinase_reps = self.kt_layer(kinase_reps)
         reps = torch.cat([kinase_reps, seq_rep], axis=1) # B, N_kinases + 1, CH
         enc_mask = torch.cat([torch.ones(attention_mask.shape[0], reps.shape[1], device=self.device), attention_mask], 1)
