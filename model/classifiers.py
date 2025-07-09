@@ -176,7 +176,7 @@ class KinaseClassifier(EncoderClassifier):
                 # Add non-linearity with normalization
                 self.kt_layer.append(torch.nn.LayerNorm(self.config.sr_dim))
                 self.kt_layer.append(torch.nn.ReLU())
-                self.kt_layer.append(torch.nn.LazyLinear())
+                self.kt_layer.append(torch.nn.LazyLinear(self.config.sr_dim))
         
         self.pos_embed = SinPositionalEncoding(config.encoder_dim, 1024 + config.sr_n_tokens + self.kinases.shape[0])
 
