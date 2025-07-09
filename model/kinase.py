@@ -12,6 +12,8 @@ def create_model(args):
     
     config.kinase_info_path = args.kinase_info_path
     config.kinase_emb_path = args.kinase_emb_path
+    config.kinase_transform = args.use_transform
+    config.nl_transform = args.nl_transform
     
     classifier = KinaseClassifier(config, base)
     if not args.lora:
@@ -25,6 +27,9 @@ def add_arguments(parser):
     parser.add_argument('--kinase_emb_path', type=str,
                         help='Precompute kinase embedding path. Formatted as dict(<id> : <embedding>)',
                         default='../data/kinase_embeddings.pt')
+    parser.add_argument('--use_transform', action='store_true', default=False, help='Use a transform layer before prepending kinase embeddings')
+    parser.add_argument('--nl_transform', action='store_true', default=False, help='Use a non-linear transform layer before prepending kinase embeddings')
+    
 def main(args):
     run_training(args, create_model)
     
