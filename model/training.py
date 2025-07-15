@@ -262,6 +262,24 @@ def run_training(args : Namespace, create_model_fn):
         )
 
     args.logdir = os.path.join("new_logs", log_dirname)
+
+    if not args.checkpoint_path:
+        # Create metadata
+        meta = Metadata()
+        meta.data = {'args' : args }
+        meta.data['current_fold'] = 0
+        meta.data['test_metrics'] = []
+        meta.save(args.logdir)
+    else:
+        par_dir = Path(args.checkpoint_path).parent
+        chkpt_path = args.checkpoint_path
+        with open(f'{par_dir.parent}/metadata.json', 'r') as f:
+            meta = Metadata(**json.load(f))
+            if 'current_fold' not in meta.data:
+                meta.data['current_fold'] = int(par_dir.name[-1])
+            for k, v in meta.data['args'].items():
+                args.__setattr__(k, v)
+        args.checkpoint_path = chkpt_path
     
     tokenizer = get_tokenizer(args)
     
@@ -281,24 +299,6 @@ def run_training(args : Namespace, create_model_fn):
         'auprc' : AveragePrecision('binary', ignore_index=args.ignore_label),
         'mcc' : MatthewsCorrCoef('binary', ignore_index=args.ignore_label)
     })
-
-    if not args.checkpoint_path:
-        # Create metadata
-        meta = Metadata()
-        meta.data = {'args' : args }
-        meta.data['current_fold'] = 0
-        meta.data['test_metrics'] = []
-        meta.save(args.logdir)
-    else:
-        par_dir = Path(args.checkpoint_path).parent
-        chkpt_path = args.checkpoint_path
-        with open(f'{par_dir.parent}/metadata.json', 'r') as f:
-            meta = Metadata(**json.load(f))
-            if 'current_fold' not in meta.data:
-                meta.data['current_fold'] = int(par_dir.name[-1])
-            for k, v in meta.data['args'].items():
-                args.__setattr__(k, v)
-        args.checkpoint_path = chkpt_path
 
     master_logdir = args.logdir
     for i in range(meta.data['current_fold'], full_dataset.n_splits):
