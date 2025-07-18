@@ -1,3 +1,5 @@
+# This file contains the source code for classifiers and their configuration classes.
+
 from torch.nn.modules import Module
 from token_classifier_base import TokenClassifier, TokenClassifierConfig
 from modules import RNNClassifier
@@ -37,10 +39,6 @@ class EncoderClassifierConfig(TokenClassifierConfig):
             ConvLayerConfig(256, 378, 5, 2, 2),
             ConvLayerConfig(378, 512, 5, 2, 2),
             ConvLayerConfig(512, 1024, 5, 2, 2),
-            # ConvLayerConfig(1024, 768, 3, 2, 2),
-            # ConvLayerConfig(768, 512, 3, 2, 2),
-            # ConvLayerConfig(512, 384, 3, 2, 2),
-            # ConvLayerConfig(384, 256, 3, 3, 2),
         ])
     
     res_cnn_layers : list[ConvLayerConfig] = field(default_factory= lambda :[
@@ -76,8 +74,7 @@ class EncoderClassifier(TokenClassifier):
         # Setup positional embeddings
         if config.pos_embed_type == 'sin':
             self.pos_embed = SinPositionalEncoding(config.encoder_dim, 1024 + config.sr_n_tokens) # [seq_rep][cls]...[eos]
-        # elif config.pos_embed_type == 'rope':
-        #     self.pos_embed = RotaryPositionalEmbeddings(config.sr_dim // config.n_heads, 1024)
+
         else:
             self.pos_embed = None
 
@@ -113,14 +110,6 @@ class EncoderClassifier(TokenClassifier):
         elif self.config.cnn_type == 'fused':
             self.sr_cnn = FusedMBConv1dModel(self.config.sr_cnn_layers, pool=True, dropout=0, activ=torch.nn.ReLU())
         
-        # Create the FFN part
-        #self.seq_rep = torch.nn.Sequential(
-        #        self.sr_cnn,
-        #        torch.nn.Flatten(),
-        #        torch.nn.LayerNorm(self.config.sr_cnn_layers[-1].out_channels),
-        #        torch.nn.Linear(self.config.sr_cnn_layers[-1].out_channels, self.config.sr_dim),
-        #        torch.nn.ReLU()
-        #    )
         self.seq_rep = self.sr_cnn
         # Initialize weights
         self.seq_rep.apply(self.xavier_init)
@@ -214,33 +203,6 @@ class KinaseClassifier(EncoderClassifier):
         x = self.encoder(x, src_key_padding_mask=torch.bitwise_not(enc_mask.bool()))
         
         return self.classifier(x)[:, reps.shape[1]:], base_out
- 
-class KinaseClassifierB(EncoderClassifier):
-    def __init__(self, config: EncoderClassifierConfig, base_model: Module) -> None:
-        super().__init__(config, base_model)
-        self.register_buffer('kinases', self.config.kinases)
-        self.kinase_gate = torch.nn.Sequential(
-            torch.nn.Linear(self.config.sr_dim, self.config.sr_dim * 4),
-            torch.nn.ReLU(),
-            torch.nn.LayerNorm(config.sr_dim * 4),
-            torch.nn.Linear(config.sr_dim * 4, 1)
-        )
-
-    def forward(self, input_ids, attention_mask, **kwargs):
-        base_out = self.base(input_ids=input_ids, attention_mask=attention_mask)
-        x = base_out[0]
-        proj = self.res_cnn(x)
-        seq_rep = self.sr_cnn(x)
-        seq_rep = self.seq_rep(seq_rep)
-        kinase_reps = self.seq_rep(self.kinases).unsqueeze(0).expand(seq_rep.size(0), -1, seq_rep.size(1))
-        kinase_mask = torch.nn.Softmax(self.kinase_gate(kinase_reps))
-        kinase_token = kinase_reps * kinase_mask
-        enc_mask = torch.cat([torch.ones(attention_mask.shape[0], 2, device=self.device), attention_mask], 1)
-        x = torch.cat([kinase_token.unsqueeze(1), seq_rep.unsqueeze(1), proj], axis=1)
-        x = x + self.pos_embed(x)
-        # src_key_padding_mask contains True if token i is padding, otherwise False
-        x = self.encoder(x, src_key_padding_mask=torch.bitwise_not(enc_mask.bool()))
-        return self.classifier(x)[:, 1:], base_out
 
 class UniPTM(TokenClassifier):
     def __init__(self, config, base, emb_size, num_heads, num_layers, hidden_size, dropout_rate, pos_weight=None):
@@ -308,7 +270,7 @@ class RNNTokenClassifier(TokenClassifier):
                 torch.nn.Linear(config.cnn_layers[-1].out_channels, seq_rep_dim),
                 torch.nn.ReLU()
             )
-
+ 
             for module in (self.cnn, self.seq_rep_mlp):
                 self.init_weights(module)
 

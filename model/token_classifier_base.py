@@ -1,10 +1,12 @@
+# This is a base class that all classifiers inherit. It 
+# manages the loss calculation, as well as other functions. 
+
 import torch
 import torch.nn as nn
 import lora
 import re
 from dataclasses import dataclass
 from typing import Callable
-from modules import CollapseAvoidLoss
 
 @dataclass
 class TokenClassifierConfig:
@@ -164,7 +166,6 @@ class TokenClassifier(nn.Module):
             valid_logits=active_logits[active_loss].flatten()
             valid_labels=labels.view(-1)[active_loss]
             loss = self.loss(valid_logits, valid_labels)
-            # loss += self.collapse_loss(valid_logits)
             
         else:
             loss = self.loss(logits.view(-1, self.n_labels), labels.view(-1))

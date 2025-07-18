@@ -1,3 +1,5 @@
+# This is the main entrypoint for running kinase-aware models
+
 from classifiers import KinaseClassifier, KinaseClassifierConfig
 from esm_train import get_esm
 from encoder import setup_config

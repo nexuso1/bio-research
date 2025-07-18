@@ -1,3 +1,5 @@
+# This is the main entrypoint of training encoder-based models
+
 from classifiers import EncoderClassifier, EncoderClassifierConfig, ConvLayerConfig, FusedMBConvConfig
 from argparse import ArgumentParser
 from training import run_training, parser, create_loss

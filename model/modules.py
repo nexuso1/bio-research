@@ -1,35 +1,9 @@
+# This file contains source for various smaller torch modules used to construct the 
+# classifiers
+
 import torch
-import torch.utils
 import math
 from dataclasses import dataclass
-from torch import Tensor
-from typing import Optional
-
-class EncoderLayerAttnOutput(torch.nn.TransformerEncoderLayer):
-    def __init__(self, *args, **kwargs):
-        super(EncoderLayerAttnOutput, self).__init__(*args, **kwargs)
-        self.last_attn_weights = 0 
-        
-    # self-attention block
-    def _sa_block(
-        self,
-        x: Tensor,
-        attn_mask: Optional[Tensor],
-        key_padding_mask: Optional[Tensor],
-        is_causal: bool = False,
-    ) -> Tensor:
-        x, attn_weights = self.self_attn(
-            x,
-            x,
-            x,
-            attn_mask=attn_mask,
-            key_padding_mask=key_padding_mask,
-            need_weights=True,
-            is_causal=is_causal,
-        )
-        
-        self.last_attn_weight = attn_weights
-        return self.dropout1(x)
 
 def keras_init(module):
     """Initialize weights using the Keras defaults."""
@@ -347,19 +321,3 @@ class FusedMBConv1D(torch.nn.Module):
             x = x + inputs
         
         return x.moveaxis(1, -1)
-    
-class CollapseAvoidLoss(torch.nn.Module):
-    """
-    Loss for prevention of initial gradient collapse while training Transformer models.
-    
-    source: https://yannikkeller.substack.com/p/solving-vanishing-gradients-from?r=3avwpj&utm_campaign=post&utm_medium=web&triedRedirect=true
-    """
-
-    def __init__(self, min_std=0.1, factor=10):
-        self.min_std = min_std
-        self.factor = factor
-        super().__init__()
-
-    def forward(self, logits):
-        std = torch.std(torch.sigmoid(logits))
-        return torch.clamp((self.min_std - std) * self.factor, 0) 

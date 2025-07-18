@@ -1,3 +1,6 @@
+# Entrypoint for the Dummy models, which were sometimes used to 
+# debug the training process
+
 from classifiers import DummyClassifier, TokenClassifierConfig
 from transformers import AutoTokenizer
 from training import parser, create_loss, run_training

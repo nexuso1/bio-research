@@ -307,7 +307,7 @@ def run_training(args, create_model_fn):
     meta.data = {'args' : args }
     meta.save(args.logdir)
 
-    train, dev = prepare_datasets(args, tokenizer, model.ignore_index)
+    train, dev = prepare_datasets(args, model.ignore_index)
     train_config = TrainingConfig(
         epochs = args.epochs, accum=args.accum, batch_size=args.batch_size,
         weight_decay=args.weight_decay,

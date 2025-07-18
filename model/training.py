@@ -1,3 +1,7 @@
+# This source file is the backbone of model training. When training
+# a model, we use the run_training function defined in this 
+# file
+
 import torch
 import lightning as L
 import os.path

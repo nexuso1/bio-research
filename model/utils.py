@@ -1,3 +1,5 @@
+# This file contains various utility functions and classes used throughout other parts of the project.
+
 import pandas as pd
 import numpy as np
 import re
@@ -41,11 +43,6 @@ def save_as_string(obj, path):
 
     with open(path, 'w') as f:
         json.dump(obj, f)
-
-def load_tf_model(path):
-    import tensorflow as tf
-    
-    return tf.keras.models.load_model(path)
 
 class ProteinDataset(Dataset):
     def __init__(self,tokenizer, max_length,  

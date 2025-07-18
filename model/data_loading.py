@@ -1,3 +1,5 @@
+# This file contains functions pertaining to preparing and loading data during training
+
 import pandas as pd
 import torch
 import numpy as np
@@ -13,28 +15,6 @@ from ast import literal_eval
 def remove_long_sequences(df, max_length):
     mask = df['sequence'].apply(lambda x: len(x) < max_length)
     return df[mask]
-
-
-def prep_pl_batch(data, tokenizer, ignore_label=-1):
-    sequences, labels = zip(*data)
-    batch = tokenizer(sequences, padding='longest', return_tensors="pt")
-    sequence_length = batch["input_ids"].shape[1]
-    # Pad the labels correctly
-    batch['labels'] = np.array([[ignore_label] + list(label) + [ignore_label] * (sequence_length - len(label) - 1) for label in labels])
-    batch['labels'] = torch.as_tensor(batch['labels'], dtype=torch.float32)
-    batch['batch_lens'] = torch.as_tensor(np.array([len(x) for x in labels]))
-
-    return batch
-
-def load_phoshpolingo_dataset(path, train_valid_test, batch_size, tokenizer, num_workers=0, shuffle=True):
-    from data.phospho_lingo.input_reader import SingleFastaDataset
-    from data.phospho_lingo.input_tokenizers import ESMAlphabet
-    from prot_dataset import PhosphoLingoDataset
-
-    data = SingleFastaDataset(path, ESMAlphabet, train_valid_test).data
-    dataset = PhosphoLingoDataset(data)
-    return DataLoader(dataset, batch_size=batch_size, collate_fn=partial(prep_pl_batch, tokenizer=tokenizer),
-                      persistent_workers=True if num_workers > 0 else False, num_workers=num_workers, shuffle=shuffle)
 
 def labeling_fn(row, residues={'S', 'T', 'Y'}, ignore_index=-1):
     res = np.zeros(len(row['sequence']), dtype=np.uint8) + ignore_index
