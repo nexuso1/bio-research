@@ -6,6 +6,6 @@ This is the main repository containing source code and data used in our project.
 
 ``model`` contains the source code for our models and the training loop
 
-``notebooks`` contains various JuPyter notebooks for the creation of visualization, data gathering a dataset preparation.
+``notebooks`` contains various JuPyter notebooks for the creation of visualizations, data gathering a dataset preparation.
 
 
