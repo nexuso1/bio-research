@@ -6,10 +6,10 @@ This is the main repository containing source code and data used in our project.
 - Residue datasets located in ``data/splits_*.json``.
 - These contain indices into ``data/phosphosite_sequences/phosphosite_df.json``. The files themselves are split into a list of 5 dictionaries, one for each fold. Each dictionary contains a list of train and test protein indices.
 
-- Dataset are created at runtime using the indices from the split file
+- Datasets are created at runtime using the indices from the split file
 
 ``model`` contains the source code for our models and the training loop
 
-``notebooks`` contains various JuPyter notebooks for the creation of visualizations, data gathering a dataset preparation.
+``notebooks`` contains various JuPyter notebooks for the creation of visualizations, data gathering and dataset preparation.
 
 
